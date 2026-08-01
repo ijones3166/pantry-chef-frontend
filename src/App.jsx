@@ -1,3 +1,4 @@
+import MealPrepView from './components/MealPrepView';
 import React, {
   useState,
   useEffect,
@@ -5339,8 +5340,19 @@ const App = () => {
         onRecipeClick={(r) => setActiveRecipe(r)}
       />
     );
-  if (showMealPrep)
-    return <MealPrepView onClose={() => setShowMealPrep(false)} />;
+  if (showMealPrep) {
+  return (
+    <MealPrepView 
+      onClose={() => setShowMealPrep(false)} 
+      recipes={recipes || communityRecipes || []}
+      pantryItems={pantryItems || []}
+      onScheduleMeal={(prepData) => {
+        console.log("Meal Prep Scheduled:", prepData);
+        // Handle mapping into calendar/state here
+      }}
+    />
+  );
+}
   if (showCheckout)
     return (
       <CheckoutModal
