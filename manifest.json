@@ -1,0 +1,21 @@
+{
+  "name": "Pantry Chef",
+  "short_name": "PantryChef",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#4f46e5",
+  "description": "Smart pantry management, AI recipe generation, and waste reduction.",
+  "icons": [
+    {
+      "src": "https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=192&h=192&fit=crop",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "https://images.unsplash.com/photo-1556910103-1c02745aae4d?w=512&h=512&fit=crop",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
