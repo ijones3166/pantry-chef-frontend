@@ -1,4 +1,6 @@
 import MealPrepView from './components/MealPrepView';
+import ShareModal from './components/ShareModal';
+import BrandedRedirectModal from './components/BrandedRedirectModal';
 import React, {
   useState,
   useEffect,
@@ -935,6 +937,76 @@ const MOCK_PERSONAS = [
 
 // --- COMPONENTS ---
 
+// --- Pantry Valuation Card ---
+const PantryValuationCard = ({ inventory }) => {
+  const [expanded, setExpanded] = useState(false);
+
+  const totalValue = useMemo(() => {
+    return inventory.reduce((acc, item) => {
+      const cost = parseFloat(item.lastCost) || 2.00;
+      const qty = parseFloat(item.quantity) || 1;
+      return acc + (cost * qty);
+    }, 0);
+  }, [inventory]);
+
+  const atRiskValue = useMemo(() => {
+    const now = new Date();
+    return inventory.reduce((acc, item) => {
+      const expiry = item.expiryDate?.toDate ? item.expiryDate.toDate() : new Date();
+      const daysLeft = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
+      if (daysLeft <= 3) {
+        const cost = parseFloat(item.lastCost) || 2.00;
+        const qty = parseFloat(item.quantity) || 1;
+        return acc + (cost * qty);
+      }
+      return acc;
+    }, 0);
+  }, [inventory]);
+
+  return (
+    <div className="bg-gradient-to-br from-indigo-900 to-slate-900 text-white p-5 rounded-2xl shadow-md space-y-3">
+      <div className="flex justify-between items-start">
+        <div>
+          <p className="text-[10px] text-indigo-300 font-bold uppercase tracking-wider">Pantry Net Worth</p>
+          <h3 className="text-2xl font-black">${totalValue.toFixed(2)}</h3>
+        </div>
+        <DollarSign className="w-6 h-6 text-indigo-400 opacity-60" />
+      </div>
+
+      {atRiskValue > 0 && (
+        <div className="bg-red-500/20 border border-red-500/30 p-2.5 rounded-xl text-xs text-red-200 flex items-center gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 text-red-400" />
+          <span><strong>${atRiskValue.toFixed(2)}</strong> expiring in ≤3 days!</span>
+        </div>
+      )}
+
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="text-[10px] text-indigo-300 font-bold hover:text-white cursor-pointer w-full text-left pt-1 border-t border-indigo-800 flex justify-between items-center"
+      >
+        <span>{expanded ? "Hide Category Breakdown" : "View Breakdown..."}</span>
+        <span>{expanded ? "▲" : "▼"}</span>
+      </button>
+
+      {expanded && (
+        <div className="space-y-1 pt-1 text-xs text-gray-300 animate-in fade-in">
+          {["Produce", "Protein", "Dairy", "Grains"].map((cat) => {
+            const catVal = inventory
+              .filter((i) => (i.category || "Other") === cat)
+              .reduce((acc, i) => acc + (parseFloat(i.lastCost) || 2.00) * (i.quantity || 1), 0);
+            return (
+              <div key={cat} className="flex justify-between text-[11px]">
+                <span>{cat}:</span>
+                <span className="font-mono font-bold">${catVal.toFixed(2)}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // NEW: Login Modal Simulator
 // --- LOGIN MODAL COMPONENT ---
 const LoginModal = ({ onClose, onLogin }) => {
@@ -995,7 +1067,7 @@ const LoginModal = ({ onClose, onLogin }) => {
           <button
             onClick={handleGoogleLogin}
             disabled={loading}
-            className="w-full py-3 mb-4 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors shadow-sm"
+            className="w-full py-3 mb-4 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl flex items-center justify-center gap-2 hover:bg-gray-50 transition-colors shadow-sm cursor-pointer"
           >
             <div className="w-4 h-4 rounded-full bg-red-500"></div>
             Continue with Google
@@ -1027,7 +1099,7 @@ const LoginModal = ({ onClose, onLogin }) => {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
+              className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-md hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 cursor-pointer"
             >
               {loading ? <Loader className="w-4 h-4 animate-spin" /> : (isRegistering ? "Sign Up" : "Sign In")}
             </button>
@@ -1035,14 +1107,14 @@ const LoginModal = ({ onClose, onLogin }) => {
 
           <button
             onClick={() => setIsRegistering(!isRegistering)}
-            className="text-xs text-indigo-600 font-bold mt-4 hover:underline"
+            className="text-xs text-indigo-600 font-bold mt-4 hover:underline cursor-pointer"
           >
             {isRegistering ? "Already have an account? Sign In" : "Need an account? Sign Up"}
           </button>
 
         </div>
         <div className="bg-gray-50 p-4 text-center border-t border-gray-100">
-          <button onClick={onClose} className="text-xs font-bold text-gray-500">
+          <button onClick={onClose} className="text-xs font-bold text-gray-500 cursor-pointer">
             Continue as Guest
           </button>
         </div>
@@ -1067,7 +1139,7 @@ const AffiliateProductCard = ({ product }) => (
         e.stopPropagation();
         alert(`Opening affiliate link for ${product.name}`);
       }}
-      className="w-full py-1 bg-indigo-50 text-indigo-600 text-[9px] font-bold rounded"
+      className="w-full py-1 bg-indigo-50 text-indigo-600 text-[9px] font-bold rounded cursor-pointer"
     >
       Shop Now
     </button>
@@ -1109,7 +1181,7 @@ const ChallengeWidget = ({ challenges = {}, onViewAll }) => {
       </div>
       <button
         onClick={onViewAll}
-        className="relative z-10 bg-white/20 hover:bg-white/30 rounded-lg px-3 py-1.5 text-[10px] font-bold"
+        className="relative z-10 bg-white/20 hover:bg-white/30 rounded-lg px-3 py-1.5 text-[10px] font-bold cursor-pointer"
       >
         See All
       </button>
@@ -1167,7 +1239,7 @@ const UserProfileView = ({ user, onClose, allRecipes, onRecipeClick }) => {
         <div className="p-4 flex items-center gap-3">
           <button
             onClick={onClose}
-            className="p-2 -ml-2 rounded-full hover:bg-gray-100"
+            className="p-2 -ml-2 rounded-full hover:bg-gray-100 cursor-pointer"
           >
             <ChevronLeft className="w-5 h-5" />
           </button>
@@ -1188,7 +1260,7 @@ const UserProfileView = ({ user, onClose, allRecipes, onRecipeClick }) => {
             <p className="text-sm text-gray-500 mb-2">{user.role}</p>
             <div className="flex gap-1 flex-wrap">
               <CreatorBadge isBrand={user.isBrand} isCreator={user.isCreator} />
-              <button className="bg-indigo-600 text-white text-xs font-bold px-3 py-1 rounded-full">
+              <button className="bg-indigo-600 text-white text-xs font-bold px-3 py-1 rounded-full cursor-pointer">
                 Follow
               </button>
             </div>
@@ -1199,7 +1271,7 @@ const UserProfileView = ({ user, onClose, allRecipes, onRecipeClick }) => {
             {influencerBadges.map((b) => (
               <span
                 key={b.id}
-                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold ${b.bg} text-gray-700`}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-bold cursor-pointer ${b.bg} text-gray-700`}
               >
                 {b.icon} {b.label}
               </span>
@@ -1339,7 +1411,7 @@ const NotificationToast = ({ message, onClose }) => (
       </div>
     </div>
     <button onClick={onClose}>
-      <X className="w-5 h-5 text-gray-400" />
+      <X className="w-5 h-5 text-gray-400 cursor-pointer" />
     </button>
   </div>
 );
@@ -1393,7 +1465,7 @@ const KitchenGuide = () => {
             className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
               activeGuide === tab.id
                 ? "bg-white shadow text-indigo-600"
-                : "text-gray-500"
+                : "text-gray-500 cursor-pointer"
             }`}
           >
             {tab.label}
@@ -1668,8 +1740,8 @@ const KitchenGuide = () => {
 };
 
 const SubscriptionModal = ({ onClose }) => (
-  <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4">
-    <div className="bg-white w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl animate-in fade-in zoom-in">
+  <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-in fade-in">
+    <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in slide-in-from-bottom">
       <div className="bg-indigo-600 p-6 text-center text-white">
         <Crown className="w-12 h-12 mx-auto mb-2 text-yellow-300" />
         <h2 className="text-2xl font-black">Upgrade to Pro</h2>
@@ -1698,12 +1770,12 @@ const SubscriptionModal = ({ onClose }) => (
             </span>
           </div>
         </div>
-        <button className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 transform active:scale-95 transition-all">
+        <button className="w-full py-4 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 transform active:scale-95 transition-all cursor-pointer">
           Subscribe for $4.99/mo
         </button>
         <button
           onClick={onClose}
-          className="w-full py-2 text-gray-400 text-xs font-bold"
+          className="w-full py-2 text-gray-400 text-xs font-bold cursor-pointer"
         >
           No thanks, maybe later
         </button>
@@ -1730,7 +1802,7 @@ const NativeAd = () => (
     </div>
     <button
       onClick={() => alert("Redirecting to Partner...")}
-      className="mt-3 w-full py-2 bg-orange-500 text-white rounded-lg text-xs font-bold shadow-sm"
+      className="mt-3 w-full py-2 bg-orange-500 text-white rounded-lg text-xs font-bold shadow-sm cursor-pointer"
     >
       Claim Offer
     </button>
@@ -1752,7 +1824,7 @@ const NativeProductAd = ({ tool }) => (
     </div>
     <button
       onClick={() => alert("Opening Affiliate Link...")}
-      className="px-3 py-1 bg-indigo-50 text-indigo-600 text-[10px] font-bold rounded-lg border border-indigo-100"
+      className="px-3 py-1 bg-indigo-50 text-indigo-600 text-[10px] font-bold rounded-lg border border-indigo-100 cursor-pointer"
     >
       Buy
     </button>
@@ -1815,10 +1887,10 @@ const ConverterWidget = () => {
                 )[1]
               );
             }}
-            className={`text-xs font-bold px-3 py-1 rounded-full ${
+            className={`text-xs font-bold px-3 py-1 rounded-full cursor-pointer ${
               convertCat === c
                 ? "bg-indigo-100 text-indigo-700"
-                : "bg-gray-100 text-gray-500"
+                : "bg-gray-100 text-gray-500 cursor-pointer"
             }`}
           >
             {c}
@@ -1837,7 +1909,7 @@ const ConverterWidget = () => {
           <select
             value={fromUnit}
             onChange={(e) => setFromUnit(e.target.value)}
-            className="w-full bg-white text-sm font-medium"
+            className="w-full bg-white text-sm font-medium cursor-pointer"
           >
             {convertCat === "Temperature"
               ? ["F", "C"].map((u) => (
@@ -1861,7 +1933,7 @@ const ConverterWidget = () => {
           <select
             value={toUnit}
             onChange={(e) => setToUnit(e.target.value)}
-            className="w-full bg-white text-sm font-medium text-right"
+            className="w-full bg-white text-sm font-medium text-right cursor-pointer"
             dir="rtl"
           >
             {convertCat === "Temperature"
@@ -1976,7 +2048,7 @@ const InventoryItem = ({ item, onUpdate, onDelete, onFindRecipes }) => {
         <div className="flex gap-2 justify-end">
           <button
             onClick={() => setIsEditing(false)}
-            className="px-3 py-1 text-xs text-gray-500"
+            className="px-3 py-1 text-xs text-gray-500 cursor-pointer"
           >
             Cancel
           </button>
@@ -1985,7 +2057,7 @@ const InventoryItem = ({ item, onUpdate, onDelete, onFindRecipes }) => {
               onUpdate(item.id, editData);
               setIsEditing(false);
             }}
-            className="px-3 py-1 text-xs bg-indigo-600 text-white rounded"
+            className="px-3 py-1 text-xs bg-indigo-600 text-white rounded cursor-pointer"
           >
             Save
           </button>
@@ -2006,7 +2078,7 @@ const InventoryItem = ({ item, onUpdate, onDelete, onFindRecipes }) => {
             {statusLabel}
             <button
               onClick={() => setIsEditing(true)}
-              className="text-gray-400 hover:text-indigo-500 opacity-50 hover:opacity-100 transition-opacity"
+              className="text-gray-400 hover:text-indigo-500 opacity-50 hover:opacity-100 transition-opacity cursor-pointer"
             >
               <Edit className="w-3 h-3" />
             </button>
@@ -2024,13 +2096,13 @@ const InventoryItem = ({ item, onUpdate, onDelete, onFindRecipes }) => {
       <div className="flex gap-1 border-l border-black/5 pl-2 ml-2">
         <button
           onClick={() => onFindRecipes(item.name)}
-          className="p-2 text-indigo-500 hover:bg-indigo-50 rounded-lg"
+          className="p-2 text-indigo-500 hover:bg-indigo-50 rounded-lg cursor-pointer"
         >
           <CookingPot className="w-4 h-4" />
         </button>
         <button
           onClick={() => onDelete(item.id)}
-          className="p-2 text-red-400 hover:bg-red-50 rounded-lg"
+          className="p-2 text-red-400 hover:bg-red-50 rounded-lg cursor-pointer"
         >
           <Trash2 className="w-4 h-4" />
         </button>
@@ -2051,34 +2123,57 @@ const RecipeCard = ({
 }) => (
   <div
     onClick={onClick}
-    className="p-4 bg-white rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-all group cursor-pointer overflow-hidden relative min-w-[280px] w-full"
+    className="bg-white rounded-2xl shadow-sm border border-gray-200 hover:shadow-md transition-all group cursor-pointer overflow-hidden flex flex-col justify-between"
   >
-    {recipe.image && (
-      <div className="w-full h-32 bg-gray-100 mb-3 rounded-xl overflow-hidden">
-        <img
-          src={recipe.image}
-          alt={recipe.title}
-          className="w-full h-full object-cover"
-        />
-      </div>
-    )}
-    <div className="flex justify-between items-start mb-2">
-      <div className="flex-1 pr-6">
-        <h3 className="font-bold text-gray-900 leading-tight group-hover:text-indigo-600 transition-colors">
-          {recipe.title}
-        </h3>
-        <div className="flex items-center gap-2 mt-1 flex-wrap">
+    <div>
+      {recipe.image && (
+        <div className="w-full h-32 bg-gray-100 overflow-hidden relative">
+          <img
+            src={recipe.image}
+            alt={recipe.title}
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+          />
+        </div>
+      )}
+      <div className="p-4 space-y-2">
+        <div className="flex justify-between items-start">
+          <h3 className="font-bold text-gray-900 leading-tight group-hover:text-indigo-600 transition-colors line-clamp-1">
+            {recipe.title}
+          </h3>
+          <div className="flex items-center gap-1 shrink-0 ml-2">
+            {/* Restored Share Button */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                if (navigator.share) {
+                  navigator.share({ title: recipe.title, text: recipe.description, url: window.location.href }).catch(() => {});
+                } else {
+                  alert("Link copied to clipboard!");
+                }
+              }}
+              className="p-1.5 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600 transition-colors cursor-pointer"
+              title="Share Recipe"
+            >
+              <Share className="w-4 h-4" />
+            </button>
+            <ChevronRight className="w-4 h-4 text-gray-300 group-hover:text-indigo-400" />
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap pt-1">
           {recipe.authorImage && (
             <button
               onClick={(e) => {
                 e.stopPropagation();
                 onAuthorClick && onAuthorClick();
               }}
-              className="flex items-center gap-1 pr-2 hover:opacity-80"
+              className="flex items-center gap-1 hover:opacity-85 cursor-pointer"
+              title="View Creator Profile"
             >
+              {/* Doubled Size for Author Profile / Click Target */}
               <img
                 src={recipe.authorImage}
-                className="w-4 h-4 rounded-full"
+                className="w-8 h-8 rounded-full object-cover border border-gray-200 shadow-xs cursor-pointer"
                 alt="author"
               />
             </button>
@@ -2105,75 +2200,74 @@ const RecipeCard = ({
                 {recipe.matchPercentage}% MATCH
               </span>
             ))}
-          <span className="text-[10px] text-gray-400 flex items-center">
+          <span className="text-[10px] text-gray-400 flex items-center ml-auto">
             <Clock className="w-3 h-3 mr-1" /> {recipe.prepTime}
           </span>
         </div>
-      </div>
-      <div className="flex flex-col gap-2 items-end">
-        <ChevronRight className="w-5 h-5 text-gray-300 group-hover:text-indigo-400" />
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            alert("Shared!");
-          }}
-          className="p-1 hover:bg-gray-100 rounded-full text-gray-400"
-        >
-          <Share className="w-4 h-4" />
-        </button>
+
+        <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed pt-1">
+          {recipe.description}
+        </p>
       </div>
     </div>
-    {!recipe.image && (
-      <p className="text-xs text-gray-500 line-clamp-2">{recipe.description}</p>
-    )}
-    <div className="absolute bottom-4 right-4 flex gap-2 z-10">
-      <div className="flex items-center bg-white/90 backdrop-blur rounded-full px-2 py-1 shadow-sm text-xs font-bold text-gray-500 mr-auto border border-gray-100">
+
+    {/* Clean Action Footer */}
+    <div className="px-4 py-3 bg-gray-50/70 border-t border-gray-100 flex items-center justify-between mt-auto">
+      <div className="flex items-center bg-white border border-gray-200 rounded-full px-2.5 py-1 shadow-xs text-xs font-bold text-gray-600 gap-2">
         <button
           onClick={(e) => {
             e.stopPropagation();
             onVote(recipe.id, 1);
           }}
-          className="mr-2 hover:text-green-600 flex items-center"
+          className="hover:text-green-600 flex items-center gap-1 cursor-pointer"
         >
-          <ThumbsUp className="w-3 h-3 mr-1" /> {recipe.likeCount || 0}
+          <ThumbsUp className="w-3 h-3" /> {recipe.likeCount || 0}
         </button>
+        <span className="text-gray-300">|</span>
         <button
           onClick={(e) => {
             e.stopPropagation();
             onVote(recipe.id, -1);
           }}
-          className="hover:text-red-600"
+          className="hover:text-red-600 cursor-pointer"
         >
           <ThumbsDown className="w-3 h-3" />
         </button>
       </div>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggleSave(recipe);
-        }}
-        className={`p-2 rounded-full ${
-          isSaved
-            ? "bg-pink-100 text-pink-600"
-            : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-        }`}
-      >
-        <Bookmark className={`w-4 h-4 ${isSaved ? "fill-current" : ""}`} />
-      </button>
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onAddToPlan(recipe);
-        }}
-        className="p-2 bg-indigo-100 text-indigo-600 rounded-full hover:bg-indigo-200"
-      >
-        <Calendar className="w-4 h-4" />
-      </button>
+
+      <div className="flex items-center gap-1.5">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSave(recipe);
+          }}
+          className={`p-2 rounded-xl border transition-colors cursor-pointer ${
+            isSaved
+              ? "bg-pink-50 border-pink-200 text-pink-600"
+              : "bg-white border-gray-200 text-gray-400 hover:bg-gray-100"
+          }`}
+          title="Save Recipe"
+        >
+          <Bookmark className={`w-3.5 h-3.5 ${isSaved ? "fill-current" : ""}`} />
+        </button>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onAddToPlan(recipe);
+          }}
+          className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs transition-colors cursor-pointer"
+          title="Add to Plan"
+        >
+          <Calendar className="w-3.5 h-3.5" />
+        </button>
+      </div>
     </div>
   </div>
 );
 
-const BudgetScreen = ({ history, wasteHistory }) => {
+
+
+const BudgetScreen = ({ history, wasteHistory, inventory = [] }) => {
   const now = new Date();
   const currentMonth = now.getMonth();
   const currentYear = now.getFullYear();
@@ -2205,11 +2299,20 @@ const BudgetScreen = ({ history, wasteHistory }) => {
     acc[cat] = (acc[cat] || 0) + (parseFloat(curr.cost) || 0);
     return acc;
   }, {});
+  
+
   const sortedCats = Object.entries(catSpend).sort((a, b) => b[1] - a[1]);
   const maxSpend = sortedCats.length > 0 ? sortedCats[0][1] : 1;
   const progress = Math.min((totalSpent / budgetGoal) * 100, 100);
+
+  {/* Pantry Asset Value Summary on Budget Page */}
+  const totalPantryWorth = useMemo(() => {
+    return inventory.reduce((acc, item) => acc + (parseFloat(item.lastCost) || 2.00) * (item.quantity || 1), 0);
+  }, [inventory]);
+
   return (
     <div className="space-y-6">
+      {/* Top Spent Card */}
       <div className="bg-indigo-600 text-white p-6 rounded-3xl shadow-lg relative overflow-hidden">
         <div className="relative z-10">
           <div className="flex justify-between items-end mb-4">
@@ -2244,6 +2347,23 @@ const BudgetScreen = ({ history, wasteHistory }) => {
           </div>
         </div>
       </div>
+        
+      {/* Pantry Capital & Asset Valuation Card */}
+      <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4">
+        <div className="flex justify-between items-center">
+          <div>
+            <p className="text-xs font-bold text-gray-400 uppercase tracking-wider">Active Pantry Assets</p>
+            <h3 className="text-2xl font-black text-gray-900">${totalPantryWorth.toFixed(2)}</h3>
+          </div>
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl">
+            <Package className="w-6 h-6" />
+          </div>
+        </div>
+        <p className="text-xs text-gray-500 leading-relaxed">
+          Your pantry represents an active store of food currency. By consuming oldest stock first and tracking items before they expire, you protect this capital from turning into waste.
+        </p>
+      </div>
+
       <div className="bg-white p-4 rounded-xl border border-gray-100 flex items-center justify-between">
         <span className="text-xs font-bold text-gray-500">
           Monthly Budget Goal:
@@ -2342,8 +2462,8 @@ const CheckoutModal = ({ items, onClose, onConfirm }) => {
     0
   );
   return (
-    <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-sm rounded-3xl p-6 space-y-4 shadow-2xl animate-in fade-in zoom-in duration-200">
+    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-in fade-in">
+      <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in slide-in-from-bottom">
         <div className="flex justify-between items-center">
           <h3 className="font-bold text-lg">Checkout</h3>
           <div className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold">
@@ -2374,13 +2494,13 @@ const CheckoutModal = ({ items, onClose, onConfirm }) => {
         <div className="flex gap-2 pt-2">
           <button
             onClick={onClose}
-            className="flex-1 py-3 text-gray-500 font-bold text-sm bg-gray-100 rounded-xl"
+            className="flex-1 py-3 text-gray-500 font-bold text-sm bg-gray-100 rounded-xl cursor-pointer"
           >
             Cancel
           </button>
           <button
             onClick={handleComplete}
-            className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-lg"
+            className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-lg cursor-pointer"
           >
             Confirm & Save
           </button>
@@ -2389,14 +2509,15 @@ const CheckoutModal = ({ items, onClose, onConfirm }) => {
     </div>
   );
 };
-const MealPlanner = ({ plan, onAddMeal, onDeleteMeal }) => {
+
+const MealPlanner = ({ plan, onAddMeal, onDeleteMeal, onGenerateDayPlan, onPlanExpiring, onBrowseRecipes }) => {
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const [selectedDay, setSelectedDay] = useState("Mon");
   const mealsForDay = plan
     .filter((p) => p.day === selectedDay)
     .sort((a, b) => {
       const orders = { Breakfast: 1, Lunch: 2, Dinner: 3 };
-      return orders[a.type] - orders[b.type];
+      return (orders[a.type] || 4) - (orders[b.type] || 4);
     });
 
   return (
@@ -2406,7 +2527,7 @@ const MealPlanner = ({ plan, onAddMeal, onDeleteMeal }) => {
           <button
             key={d}
             onClick={() => setSelectedDay(d)}
-            className={`flex-shrink-0 w-12 h-16 rounded-xl flex flex-col items-center justify-center text-xs font-bold transition-all ${
+            className={`flex-shrink-0 w-12 h-16 rounded-xl flex flex-col items-center justify-center text-xs font-bold transition-all cursor-pointer ${
               selectedDay === d
                 ? "bg-indigo-600 text-white shadow-lg"
                 : "bg-white text-gray-500 border border-gray-100"
@@ -2419,21 +2540,22 @@ const MealPlanner = ({ plan, onAddMeal, onDeleteMeal }) => {
           </button>
         ))}
       </div>
+      
       <div className="bg-white rounded-3xl p-4 border border-gray-100 shadow-sm min-h-[300px]">
         <div className="flex justify-between items-center mb-4">
           <h3 className="font-bold text-gray-800 flex items-center">
-            <Calendar className="w-5 h-5 mr-2 text-indigo-600" /> {selectedDay}
-            's Plan
+            <Calendar className="w-5 h-5 mr-2 text-indigo-600" /> {selectedDay}'s Plan
           </h3>
           {mealsForDay.length > 0 && (
             <button
               onClick={() => generateICS(mealsForDay)}
-              className="text-xs text-indigo-500 font-bold flex items-center bg-indigo-50 px-2 py-1 rounded-lg"
+              className="text-xs text-indigo-500 font-bold flex items-center bg-indigo-50 px-2 py-1 rounded-lg cursor-pointer"
             >
               <Download className="w-3 h-3 mr-1" /> Sync
             </button>
           )}
         </div>
+
         {mealsForDay.length > 0 ? (
           <div className="space-y-3">
             {mealsForDay.map((meal) => (
@@ -2451,7 +2573,7 @@ const MealPlanner = ({ plan, onAddMeal, onDeleteMeal }) => {
                 </div>
                 <button
                   onClick={() => onDeleteMeal(meal.id)}
-                  className="text-gray-400 hover:text-red-500"
+                  className="text-gray-400 hover:text-red-500 cursor-pointer"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -2459,17 +2581,45 @@ const MealPlanner = ({ plan, onAddMeal, onDeleteMeal }) => {
             ))}
           </div>
         ) : (
-          <div className="text-center py-10 text-gray-400">
-            <p className="text-sm">No meals planned.</p>
-            <p className="text-xs mt-1">
-              Find a recipe and tap the calendar icon!
-            </p>
+          /* ACTIONABLE EMPTY STATE */
+          <div className="text-center py-8 px-4 space-y-4">
+            <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center mx-auto">
+              <Calendar className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-gray-800">No meals planned for {selectedDay}</p>
+              <p className="text-xs text-gray-400 mt-0.5">Let's build your schedule with one tap:</p>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 max-w-sm mx-auto pt-2">
+              <button
+                onClick={() => onGenerateDayPlan && onGenerateDayPlan(selectedDay)}
+                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              >
+                <Zap className="w-4 h-4 text-amber-300" /> Auto-Generate {selectedDay} Plan
+              </button>
+              
+              <button
+                onClick={() => onPlanExpiring && onPlanExpiring(selectedDay)}
+                className="w-full py-2.5 bg-orange-50 hover:bg-orange-100 text-orange-700 border border-orange-200 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              >
+                <AlertCircle className="w-4 h-4 text-orange-500" /> Plan Around Expiring Pantry Items
+              </button>
+
+              <button
+                onClick={() => onBrowseRecipes && onBrowseRecipes()}
+                className="w-full py-2.5 bg-gray-50 hover:bg-gray-100 text-gray-600 border border-gray-200 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              >
+                <Search className="w-4 h-4 text-gray-400" /> Browse Recipe Library
+              </button>
+            </div>
           </div>
         )}
       </div>
     </div>
   );
 };
+
 const CookingMode = ({ recipe, initialServings, onClose }) => {
   const [step, setStep] = useState(0);
   const [chatOpen, setChatOpen] = useState(false);
@@ -2477,6 +2627,7 @@ const CookingMode = ({ recipe, initialServings, onClose }) => {
   const [chatLog, setChatLog] = useState([]);
   const [aiThinking, setAiThinking] = useState(false);
   const [activeTimer, setActiveTimer] = useState(null);
+  const [showMenuOverlay, setShowMenuOverlay] = useState(false);
 
   useEffect(() => {
     let interval;
@@ -2498,9 +2649,12 @@ const CookingMode = ({ recipe, initialServings, onClose }) => {
       label: `${minutes}m Timer`,
     });
   };
-  const steps = recipe.instructions.match(/\r\n|\n/)
-    ? recipe.instructions.split(/\r\n|\n+/).filter((s) => s.trim().length > 0)
-    : recipe.instructions.split(/\d+\.\s+/).filter((s) => s.trim().length > 0);
+
+  // Safe instruction parsing fallback if recipe.instructions is missing or undefined
+  const rawInstructions = recipe.instructions || "1. Prepare ingredients as directed.\n2. Cook until done.";
+  const steps = rawInstructions.match(/\r\n|\n/)
+    ? rawInstructions.split(/\r\n|\n+/).filter((s) => s.trim().length > 0)
+    : rawInstructions.split(/\d+\.\s+/).filter((s) => s.trim().length > 0);
 
   const handleAskChef = async (e) => {
     e.preventDefault();
@@ -2522,14 +2676,15 @@ const CookingMode = ({ recipe, initialServings, onClose }) => {
   };
 
   const renderStepWithTimer = (text) => {
-    const timeMatch = text.match(/(\d+)\s*(minute|min|m)s?/i);
+    const stepText = typeof text === 'string' ? text : String(text || "");
+    const timeMatch = stepText.match(/(\d+)\s*(minute|min|m)s?/i);
     return (
       <span>
-        {text}
+        {stepText}
         {timeMatch && (
           <button
             onClick={() => startTimer(parseInt(timeMatch[1]))}
-            className="ml-2 inline-flex items-center px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-bold hover:bg-indigo-200"
+            className="ml-2 inline-flex items-center px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-bold hover:bg-indigo-200 cursor-pointer"
           >
             <TimerIcon className="w-3 h-3 mr-1" /> Start {timeMatch[1]}m Timer
           </button>
@@ -2558,23 +2713,70 @@ const CookingMode = ({ recipe, initialServings, onClose }) => {
           </div>
           <button
             onClick={() => setActiveTimer(null)}
-            className="p-2 bg-white/20 rounded-lg hover:bg-white/30"
+            className="p-2 bg-white/20 rounded-lg hover:bg-white/30 cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
       )}
-      <div className="p-4 flex justify-between items-center bg-gray-800">
-        <div className="flex-1">
-          <h2 className="font-bold text-lg truncate">{recipe.title}</h2>
-          <p className="text-xs text-gray-400">
+      
+
+      <div className="p-4 flex justify-between items-center bg-gray-800 z-20 border-b border-gray-700">
+        <div className="flex items-center gap-2">
+          {/* Menu / Overview Toggle Button */}
+          <button
+            onClick={() => setShowMenuOverlay(!showMenuOverlay)}
+            className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+            title="Toggle Recipe Overview"
+          >
+            <List className="w-4 h-4" /> {showMenuOverlay ? "Close Menu" : "Recipe Menu"}
+          </button>
+        </div>
+        
+        <div className="flex-1 px-3 text-center">
+          <h2 className="font-bold text-sm truncate">{recipe.title}</h2>
+          <p className="text-[10px] text-gray-400">
             Cooking for {initialServings} servings
           </p>
         </div>
-        <button onClick={onClose} className="p-2 bg-gray-700 rounded-full">
+
+        <button onClick={onClose} className="p-2 bg-gray-700 hover:bg-gray-600 rounded-full cursor-pointer">
           <X className="w-5 h-5" />
         </button>
       </div>
+
+      {showMenuOverlay && (
+        <div className="absolute inset-x-0 top-16 bottom-0 bg-gray-900/95 backdrop-blur-md z-30 p-6 overflow-y-auto animate-in fade-in space-y-4">
+          <div className="flex justify-between items-center border-b border-gray-800 pb-3">
+            <h3 className="font-bold text-sm text-indigo-400 uppercase tracking-wider">Quick Navigation</h3>
+            <button onClick={() => setShowMenuOverlay(false)} className="text-gray-400 hover:text-white cursor-pointer">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Jump to Step:</h4>
+            <div className="grid grid-cols-2 gap-2">
+              {steps.map((sText, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => {
+                    setStep(idx);
+                    setShowMenuOverlay(false);
+                  }}
+                  className={`p-2 rounded-xl text-xs text-left font-medium truncate border cursor-pointer ${
+                    step === idx ? "bg-indigo-600 border-indigo-500 text-white" : "bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700"
+                  }`}
+                >
+                  Step {idx + 1}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+
+
       <div className="flex-grow flex flex-col justify-center p-6 text-center space-y-6 overflow-y-auto">
         <span className="text-gray-400 text-sm font-bold uppercase tracking-widest">
           Step {step + 1} of {steps.length}
@@ -2583,26 +2785,28 @@ const CookingMode = ({ recipe, initialServings, onClose }) => {
           {renderStepWithTimer(steps[step])}
         </p>
       </div>
+
+
       <div className="p-6 pb-8 space-y-4">
         <div className="flex gap-4">
           <button
             disabled={step === 0}
             onClick={() => setStep((s) => Math.max(0, s - 1))}
-            className="flex-1 py-4 bg-gray-700 rounded-2xl font-bold disabled:opacity-30"
+            className="flex-1 py-4 bg-gray-700 rounded-2xl font-bold disabled:opacity-30 cursor-pointer"
           >
             Previous
           </button>
           <button
             disabled={step === steps.length - 1}
             onClick={() => setStep((s) => Math.min(steps.length - 1, s + 1))}
-            className="flex-1 py-4 bg-indigo-600 rounded-2xl font-bold disabled:opacity-30"
+            className="flex-1 py-4 bg-indigo-600 rounded-2xl font-bold disabled:opacity-30 cursor-pointer"
           >
             Next Step
           </button>
         </div>
         <button
           onClick={() => setChatOpen(!chatOpen)}
-          className="w-full py-3 bg-gray-800 rounded-xl text-indigo-300 font-bold flex items-center justify-center gap-2"
+          className="w-full py-3 bg-gray-800 rounded-xl text-indigo-300 font-bold flex items-center justify-center gap-2 cursor-pointer"
         >
           <List className="w-4 h-4" /> Ask Chef Assistant
         </button>
@@ -2612,7 +2816,7 @@ const CookingMode = ({ recipe, initialServings, onClose }) => {
           <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-3xl">
             <h3 className="font-bold">Chef Assistant</h3>
             <button onClick={() => setChatOpen(false)}>
-              <X className="w-5 h-5" />
+              <X className="w-5 h-5 cursor-pointer" />
             </button>
           </div>
           <div className="flex-grow overflow-y-auto p-4 space-y-3 bg-gray-50">
@@ -2641,7 +2845,7 @@ const CookingMode = ({ recipe, initialServings, onClose }) => {
             />
             <button
               type="submit"
-              className="p-3 bg-indigo-600 text-white rounded-xl"
+              className="p-3 bg-indigo-600 text-white rounded-xl cursor-pointer"
             >
               <ChevronRight />
             </button>
@@ -2739,7 +2943,7 @@ const RecipeDetailView = ({
         </div>
       )}
       <div className="p-4 border-b flex items-center justify-between sticky top-0 bg-white z-10">
-        <button onClick={onClose} className="p-2 -ml-2">
+        <button onClick={onClose} className="p-2 -ml-2 cursor-pointer">
           <ChevronLeft />
         </button>
         <div className="flex-1 px-2">
@@ -2760,20 +2964,20 @@ const RecipeDetailView = ({
           <div className="flex items-center bg-gray-100 rounded-full px-2 py-1 text-[10px] font-bold text-gray-600 border border-gray-200">
             <button
               onClick={() => onVote(recipe.id, 1)}
-              className="hover:text-green-600 mr-2 flex items-center"
+              className="hover:text-green-600 mr-2 flex items-center cursor-pointer"
             >
               <ThumbsUp className="w-3 h-3 mr-1" /> {recipe.likeCount || 0}
             </button>
             <button
               onClick={() => onVote(recipe.id, -1)}
-              className="hover:text-red-600 flex items-center"
+              className="hover:text-red-600 flex items-center cursor-pointer"
             >
               <ThumbsDown className="w-3 h-3" />
             </button>
           </div>
           <button
             onClick={() => setShowConverter(!showConverter)}
-            className={`p-2 rounded-full ${
+            className={`p-2 rounded-full cursor-pointer ${
               showConverter
                 ? "bg-indigo-600 text-white"
                 : "text-indigo-600 bg-indigo-50"
@@ -2783,7 +2987,7 @@ const RecipeDetailView = ({
           </button>
           <button
             onClick={() => onToggleSave(recipe)}
-            className={`p-2 rounded-full ${
+            className={`p-2 rounded-full cursor-pointer ${
               isSaved
                 ? "bg-pink-100 text-pink-600"
                 : "bg-gray-100 text-gray-400 hover:bg-gray-200"
@@ -2793,7 +2997,7 @@ const RecipeDetailView = ({
           </button>
           <button
             onClick={() => setShowPlanModal(true)}
-            className="p-2 text-indigo-600 bg-indigo-50 rounded-full"
+            className="p-2 text-indigo-600 bg-indigo-50 rounded-full cursor-pointer"
           >
             <Calendar className="w-4 h-4" />
           </button>
@@ -2806,7 +3010,7 @@ const RecipeDetailView = ({
               Quick Converter
             </h4>
             <button onClick={() => setShowConverter(false)}>
-              <X className="w-4 h-4 text-gray-400" />
+              <X className="w-4 h-4 text-gray-400 cursor-pointer cursor-pointer" />
             </button>
           </div>
           <ConverterWidget />
@@ -2871,7 +3075,7 @@ const RecipeDetailView = ({
             </div>
             <button
               onClick={toggleOven}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 ovenStatus === "off"
                   ? "bg-white text-orange-600 border border-orange-200"
                   : "bg-orange-600 text-white"
@@ -2938,7 +3142,7 @@ const RecipeDetailView = ({
           <div className="flex items-center gap-3 bg-white rounded-lg px-2 py-1 shadow-sm">
             <button
               onClick={() => setServings((s) => Math.max(1, s - 1))}
-              className="p-1 text-indigo-600 hover:bg-indigo-50 rounded"
+              className="p-1 text-indigo-600 hover:bg-indigo-50 rounded cursor-pointer"
             >
               <Minus className="w-4 h-4" />
             </button>
@@ -2947,7 +3151,7 @@ const RecipeDetailView = ({
             </span>
             <button
               onClick={() => setServings((s) => s + 1)}
-              className="p-1 text-indigo-600 hover:bg-indigo-50 rounded"
+              className="p-1 text-indigo-600 hover:bg-indigo-50 rounded cursor-pointer"
             >
               <Plus className="w-4 h-4" />
             </button>
@@ -2960,12 +3164,12 @@ const RecipeDetailView = ({
             </h4>
             <div className="grid grid-cols-1 gap-2">
               {recipe.allIngredients?.map((ing, i) => {
-                const inPantry = inventory.some((invItem) =>
-                  invItem.name.toLowerCase().includes(ing.name.toLowerCase())
-                );
+                // 1. Find matching inventory item safely during render
                 const matchedItem = inventory.find((invItem) =>
-                  invItem.name.toLowerCase().includes(ing.name.toLowerCase())
+                  invItem.name?.toLowerCase().includes(ing.name?.toLowerCase()) ||
+                  ing.name?.toLowerCase().includes(invItem.name?.toLowerCase())
                 );
+                const inPantry = Boolean(matchedItem);
                 const isFrozen = matchedItem?.location === "Freezer";
 
                 const scaledQ = scaleQty(ing.quantity);
@@ -2984,7 +3188,7 @@ const RecipeDetailView = ({
                           type="checkbox"
                           checked={selectedMissing.includes(ing.name)}
                           onChange={() => toggleMissingItem(ing.name)}
-                          className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500"
+                          className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer"
                         />
                       ) : (
                         <CheckCircle className="w-4 h-4 text-green-500" />
@@ -3005,15 +3209,38 @@ const RecipeDetailView = ({
                         )}
                       </span>
                     </div>
-                    {!inPantry && (
-                      <button
-                        onClick={() => onAddToPantry(ing.name)}
-                        className="p-1.5 bg-green-100 text-green-700 rounded-lg text-[10px] font-bold flex items-center gap-1"
-                        title="I have this at home"
-                      >
-                        <Home className="w-3 h-3" /> Have
-                      </button>
-                    )}
+
+                    {/* Fully Functional Bidirectional Toggle */}
+                    <button
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        if (inPantry && matchedItem?.id) {
+                          // Remove the item using its pre-calculated Firestore ID
+                          await deleteDoc(
+                            doc(db, `/artifacts/${appId}/users/${effectiveUserId}/inventory`, matchedItem.id)
+                          );
+                        } else {
+                          // Add the item to pantry
+                          await onAddToPantry(ing.name);
+                        }
+                      }}
+                      className={`px-2.5 py-1.5 rounded-xl text-[10px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                        inPantry
+                          ? "bg-emerald-100 text-emerald-700 border border-emerald-200 hover:bg-emerald-200"
+                          : "bg-rose-100 text-rose-700 border border-rose-200 hover:bg-rose-200"
+                      }`}
+                      title={inPantry ? "In stock (Click to remove from pantry)" : "Missing (Click to add to pantry)"}
+                    >
+                      {inPantry ? (
+                        <>
+                          <CheckCircle className="w-3 h-3" /> In Stock (Have)
+                        </>
+                      ) : (
+                        <>
+                          <ShoppingCart className="w-3 h-3" /> Missing (Need)
+                        </>
+                      )}
+                    </button>
                   </div>
                 );
               })}
@@ -3022,11 +3249,15 @@ const RecipeDetailView = ({
           {selectedMissing.length > 0 && (
             <div className="grid grid-cols-2 gap-2">
               <button
-                onClick={() => onAddToGrocery(selectedMissing)}
-                className="py-3 bg-indigo-100 text-indigo-700 rounded-xl font-bold text-xs flex items-center justify-center gap-2"
+                onClick={() => {
+                  onAddToGrocery(selectedMissing);
+                  // Explicitly fire notification from recipe view as well
+                  setNotification(`🛒 Added ${selectedMissing.length} items to shopping list!`);
+                  setTimeout(() => setNotification(null), 3000);
+                }}
+                className="py-3 bg-indigo-100 text-indigo-700 rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer"
               >
-                <Plus className="w-4 h-4" /> Add Selected (
-                {selectedMissing.length})
+                <Plus className="w-4 h-4" /> Add Selected ({selectedMissing.length})
               </button>
               <button
                 onClick={() =>
@@ -3037,7 +3268,7 @@ const RecipeDetailView = ({
                     "_blank"
                   )
                 }
-                className="py-3 bg-orange-500 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2"
+                className="py-3 bg-orange-500 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 cursor-pointer"
               >
                 <ShoppingCart className="w-4 h-4" /> Order Selected
               </button>
@@ -3055,7 +3286,7 @@ const RecipeDetailView = ({
         <div className="space-y-2">
           <button
             onClick={() => setCookingMode(true)}
-            className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all"
+            className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
           >
             <Play className="w-5 h-5" /> Start Cooking Mode
           </button>
@@ -3067,7 +3298,7 @@ const RecipeDetailView = ({
               }));
               onCook({ ...recipe, allIngredients: scaledIngredients });
             }}
-            className="w-full py-4 bg-white border border-green-200 text-green-600 rounded-2xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-all"
+            className="w-full py-4 bg-white border border-green-200 text-green-600 rounded-2xl font-bold flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
           >
             <Activity className="w-5 h-5" /> Log Meal & Deduct Stock
           </button>
@@ -3079,7 +3310,7 @@ const RecipeDetailView = ({
             <div className="flex justify-between items-center border-b pb-2 mb-4">
               <h3 className="font-bold text-lg">Add to Meal Plan</h3>
               <button onClick={() => setShowPlanModal(false)}>
-                <X className="w-5 h-5 text-gray-400" />
+                <X className="w-5 h-5 text-gray-400 cursor-pointer" />
               </button>
             </div>
             <div className="space-y-4">
@@ -3096,7 +3327,7 @@ const RecipeDetailView = ({
                         className={`p-2 rounded-lg text-xs font-bold ${
                           planDay === d
                             ? "bg-indigo-600 text-white"
-                            : "bg-gray-100 text-gray-500"
+                            : "bg-gray-100 text-gray-500 cursor-pointer"
                         }`}
                       >
                         {d}
@@ -3130,7 +3361,7 @@ const RecipeDetailView = ({
                     type="time"
                     value={planTime}
                     onChange={(e) => setPlanTime(e.target.value)}
-                    className="w-full p-3 bg-gray-50 rounded-xl text-sm font-medium outline-none"
+                    className="w-full p-3 bg-gray-50 rounded-xl text-sm font-medium outline-none cursor-pointer"
                   />
                 </div>
               </div>
@@ -3145,7 +3376,7 @@ const RecipeDetailView = ({
                 </div>
                 <button
                   onClick={() => setPlanReminder(!planReminder)}
-                  className={`p-2 rounded-full transition-colors ${
+                  className={`p-2 rounded-full transition-colors cursor-pointer ${
                     planReminder
                       ? "bg-indigo-600 text-white"
                       : "bg-white text-indigo-300"
@@ -3169,7 +3400,7 @@ const RecipeDetailView = ({
                       `Reminder set for ${getPrepStartTime()} on ${planDay}!`
                     );
                 }}
-                className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700"
+                className="w-full py-3 bg-indigo-600 text-white font-bold rounded-xl shadow-lg hover:bg-indigo-700 cursor-pointer"
               >
                 Save to Schedule
               </button>
@@ -3245,7 +3476,7 @@ const AdminDashboard = ({
             <button
               onClick={() => setAdminView("impact")}
               className={`px-2 py-1 rounded text-[10px] font-bold ${
-                adminView === "impact" ? "bg-indigo-600" : "bg-gray-800"
+                adminView === "impact" ? "bg-indigo-600" : "bg-gray-800 cursor-pointer"
               }`}
             >
               Impact
@@ -3253,7 +3484,7 @@ const AdminDashboard = ({
             <button
               onClick={() => setAdminView("monetization")}
               className={`px-2 py-1 rounded text-[10px] font-bold ${
-                adminView === "monetization" ? "bg-indigo-600" : "bg-gray-800"
+                adminView === "monetization" ? "bg-indigo-600" : "bg-gray-800 cursor-pointer"
               }`}
             >
               Data
@@ -3261,7 +3492,7 @@ const AdminDashboard = ({
             <button
               onClick={() => setAdminView("users")}
               className={`px-2 py-1 rounded text-[10px] font-bold ${
-                adminView === "users" ? "bg-indigo-600" : "bg-gray-800"
+                adminView === "users" ? "bg-indigo-600" : "bg-gray-800 cursor-pointer"
               }`}
             >
               Users
@@ -3269,7 +3500,7 @@ const AdminDashboard = ({
             <button
               onClick={() => setAdminView("feedback")}
               className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 ${
-                adminView === "feedback" ? "bg-indigo-600" : "bg-gray-800"
+                adminView === "feedback" ? "bg-indigo-600" : "bg-gray-800 cursor-pointer"
               }`}
             >
               Feedback
@@ -3348,13 +3579,13 @@ const AdminDashboard = ({
             </p>
             <button
               onClick={onSeed}
-              className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-2"
+              className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold text-white flex items-center justify-center gap-2 cursor-pointer"
             >
               <Users className="w-4 h-4" /> Populate Fake Community (Seed)
             </button>
             <button
               onClick={onPurge}
-              className="w-full py-3 bg-red-900/50 hover:bg-red-900 text-red-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2"
+              className="w-full py-3 bg-red-900/50 hover:bg-red-900 text-red-200 rounded-xl text-xs font-bold flex items-center justify-center gap-2 cursor-pointer"
             >
               <Trash2 className="w-4 h-4" /> Purge Test Data
             </button>
@@ -3412,7 +3643,7 @@ const AdminDashboard = ({
               </div>
               <button
                 onClick={() => onImpersonate(u.id)}
-                className="px-3 py-1 bg-purple-100 text-purple-700 rounded-lg text-[10px] font-bold hover:bg-purple-200"
+                className="px-3 py-1 bg-purple-100 text-purple-700 rounded-lg text-[10px] font-bold hover:bg-purple-200 cursor-pointer"
               >
                 Login
               </button>
@@ -3451,8 +3682,9 @@ const ToolsScreen = ({
   onToggleAdmin,
   isDemoAuthenticated,
   onShowLogin,
+  initialSubTab = "converter",
 }) => {
-  const [subTab, setSubTab] = useState("converter");
+  const [subTab, setSubTab] = useState(initialSubTab);
   const [profileImage, setProfileImage] = useState(profile.image || null);
   const [dataSyncId, setDataSyncId] = useState(
     localStorage.getItem("pantry_chef_custom_id") || ""
@@ -3545,7 +3777,7 @@ const ToolsScreen = ({
           className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
             subTab === "converter"
               ? "bg-white shadow text-indigo-600"
-              : "text-gray-500"
+              : "text-gray-500 cursor-pointer"
           }`}
         >
           Calculator
@@ -3555,7 +3787,7 @@ const ToolsScreen = ({
           className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
             subTab === "profile"
               ? "bg-white shadow text-indigo-600"
-              : "text-gray-500"
+              : "text-gray-500 cursor-pointer"
           }`}
         >
           My Settings
@@ -3575,7 +3807,7 @@ const ToolsScreen = ({
               </p>
               <button
                 onClick={onShowLogin}
-                className="w-full py-3 bg-white text-indigo-600 font-bold rounded-xl hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2"
+                className="w-full py-3 bg-white text-indigo-600 font-bold rounded-xl hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2 cursor-pointer"
               >
                 <LogIn className="w-4 h-4" /> Sign In / Sign Up
               </button>
@@ -3680,7 +3912,7 @@ const ToolsScreen = ({
                     <p className="text-xs font-bold text-yellow-700 mb-2">
                       You are a Verified Pro Chef!
                     </p>
-                    <button className="w-full py-2 bg-white text-yellow-700 text-xs font-bold rounded-lg border border-yellow-200 shadow-sm">
+                    <button className="w-full py-2 bg-white text-yellow-700 text-xs font-bold rounded-lg border border-yellow-200 shadow-sm cursor-pointer">
                       Manage Affiliate Links
                     </button>
                   </div>
@@ -3767,7 +3999,7 @@ const ToolsScreen = ({
                     "Your Spinach and Milk are expiring in 2 days! Click to see recipes."
                   )
                 }
-                className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left"
+                className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left cursor-pointer"
               >
                 Freshness Alert
               </button>
@@ -3778,7 +4010,7 @@ const ToolsScreen = ({
                     "Great job! You stayed under $150 this week."
                   )
                 }
-                className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left"
+                className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left cursor-pointer"
               >
                 Budget Success
               </button>
@@ -3789,7 +4021,7 @@ const ToolsScreen = ({
                     "Heads up! Tomorrow's meal needs 'Chicken'. Move it from Freezer to Fridge tonight."
                   )
                 }
-                className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left border-l-2 border-blue-400"
+                className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left border-l-2 border-blue-400 cursor-pointer"
               >
                 Defrost Reminder
               </button>
@@ -3800,7 +4032,7 @@ const ToolsScreen = ({
                     "It's 5:30 PM. You have ingredients for 'Spicy Tacos'. Start cooking?"
                   )
                 }
-                className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left"
+                className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left cursor-pointer"
               >
                 Meal Context
               </button>
@@ -3811,7 +4043,7 @@ const ToolsScreen = ({
                     "Your favorite 'Olive Oil' is 20% off at Walmart today."
                   )
                 }
-                className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left"
+                className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left cursor-pointer"
               >
                 Deal Hunter
               </button>
@@ -3835,7 +4067,7 @@ const ToolsScreen = ({
             </p>
             <button
               onClick={() => window.location.reload()}
-              className="mt-2 w-full py-2 bg-gray-100 text-gray-600 rounded-lg text-xs font-bold"
+              className="mt-2 w-full py-2 bg-gray-100 text-gray-600 rounded-lg text-xs font-bold cursor-pointer"
             >
               Apply & Reload App
             </button>
@@ -3857,7 +4089,7 @@ const ToolsScreen = ({
               onClick={() =>
                 window.dispatchEvent(new CustomEvent("openSubscription"))
               }
-              className="w-full py-2 bg-white text-indigo-600 rounded-xl text-xs font-bold shadow-sm"
+              className="w-full py-2 bg-white text-indigo-600 rounded-xl text-xs font-bold shadow-sm cursor-pointer"
             >
               Upgrade Now
             </button>
@@ -3898,7 +4130,7 @@ const ToolsScreen = ({
                   alert("Admin Mode Enabled. Check the new 'Admin' tab.");
                 else alert("Admin Mode Disabled.");
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 isAdmin
                   ? "bg-indigo-500 text-white"
                   : "bg-gray-700 text-gray-300"
@@ -3921,7 +4153,7 @@ const ToolsScreen = ({
                 <button
                   key={d}
                   onClick={() => toggleItem("diets", d)}
-                  className={`px-4 py-2 rounded-full text-xs font-bold border ${
+                  className={`px-4 py-2 rounded-full text-xs font-bold border cursor-pointer ${
                     localProfile.diets?.includes(d)
                       ? "bg-indigo-600 text-white"
                       : "bg-white"
@@ -3945,7 +4177,7 @@ const ToolsScreen = ({
                 <button
                   key={e}
                   onClick={() => toggleItem("equipment", e)}
-                  className={`px-4 py-2 rounded-full text-xs font-bold border ${
+                  className={`px-4 py-2 rounded-full text-xs font-bold border cursor-pointer ${
                     localProfile.equipment?.includes(e)
                       ? "bg-indigo-600 text-white"
                       : "bg-white"
@@ -3976,7 +4208,7 @@ const ToolsScreen = ({
               <button
                 type="submit"
                 disabled={!customEquip.trim()}
-                className="absolute right-2 top-2 text-indigo-600 p-1"
+                className="absolute right-2 top-2 text-indigo-600 p-1 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
               </button>
@@ -3985,7 +4217,7 @@ const ToolsScreen = ({
           {isDemoAuthenticated && (
             <button
               onClick={() => onSaveProfile(localProfile)}
-              className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg"
+              className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg cursor-pointer"
             >
               Save Profile
             </button>
@@ -4042,7 +4274,7 @@ const VoiceInputWidget = ({ onVoiceSubmit, isProcessing, layout = "full" }) => {
         type="button"
         onClick={toggleListening}
         disabled={isProcessing}
-        className={`transition-all transform flex items-center justify-center ${
+        className={`transition-all transform flex items-center justify-center cursor-pointer ${
           layout === "full" ? "p-4 rounded-full shadow-lg" : "p-3 rounded-xl border border-gray-200"
         } ${
           isListening
@@ -4102,7 +4334,7 @@ const FeedbackModal = ({ onClose, effectiveUserId, db, appId }) => {
           <h3 className="font-black text-lg text-gray-900 flex items-center gap-2">
             <AlertCircle className="w-5 h-5 text-indigo-600" /> Trial Feedback
           </h3>
-          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full">
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full cursor-pointer">
             <X className="w-5 h-5 text-gray-400" />
           </button>
         </div>
@@ -4122,7 +4354,7 @@ const FeedbackModal = ({ onClose, effectiveUserId, db, appId }) => {
                   type="button"
                   onClick={() => setFeedbackType("bug")}
                   className={`py-2 rounded-xl text-xs font-bold border ${
-                    feedbackType === "bug" ? "bg-red-50 border-red-200 text-red-700" : "bg-gray-50 text-gray-600"
+                    feedbackType === "bug" ? "bg-red-50 border-red-200 text-red-700" : "bg-gray-50 text-gray-600 cursor-pointer"
                   }`}
                 >
                   🐛 Report Bug
@@ -4131,7 +4363,7 @@ const FeedbackModal = ({ onClose, effectiveUserId, db, appId }) => {
                   type="button"
                   onClick={() => setFeedbackType("feature")}
                   className={`py-2 rounded-xl text-xs font-bold border ${
-                    feedbackType === "feature" ? "bg-indigo-50 border-indigo-200 text-indigo-700" : "bg-gray-50 text-gray-600"
+                    feedbackType === "feature" ? "bg-indigo-50 border-indigo-200 text-indigo-700" : "bg-gray-50 text-gray-600 cursor-pointer"
                   }`}
                 >
                   💡 Suggestion
@@ -4153,13 +4385,95 @@ const FeedbackModal = ({ onClose, effectiveUserId, db, appId }) => {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-indigo-700 transition-colors"
+              className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 hover:bg-indigo-700 transition-colors cursor-pointer"
             >
               {isSubmitting ? <Loader className="w-5 h-5 animate-spin" /> : <Send className="w-5 h-5" />}
               Submit Feedback
             </button>
           </form>
         )}
+      </div>
+    </div>
+  );
+};
+
+const DynamicHeaderBanner = ({ activeTab, userProfile, isDemoAuthenticated, onNavigateProfile }) => {
+  // Variations for each tab
+  const tabMessages = {
+    pantry: [
+      "Welcome to your pantry, Chef!",
+      "What ingredients are we working with today?",
+      "Let's check what's fresh in stock."
+    ],
+    recipes: [
+      "What's on the menu today, Chef?",
+      "Ready to cook up something amazing?",
+      "Let's find a recipe matching your stock."
+    ],
+    shopping: [
+      "Time to restock the essentials, Chef.",
+      "Build your list or check weekly deals.",
+      "Never run out of your favorites."
+    ],
+    budget: [
+      "Tracking your kitchen savings, Chef.",
+      "Smart spending meets great cooking.",
+      "Monitor your food waste and grocery budget."
+    ],
+    community: [
+      "Explore creations from the community, Chef.",
+      "Share your signature dishes with fellow foodies.",
+      "Discover what other chefs are cooking up."
+    ],
+    profile: [
+      "Your chef dashboard and preferences.",
+      "Customize your kitchen tools and settings.",
+      "Manage your profile and achievements."
+    ],
+    admin: [
+      "System control and network metrics.",
+      "Welcome to the Admin Portal, Chef."
+    ]
+  };
+
+  // Select a variation based on the active tab (or shuffle)
+  const messages = tabMessages[activeTab] || ["Welcome to Pantry Chef!"];
+  // Simple deterministic rotation based on time or active tab length to keep it snappy
+  const message = messages[Math.floor(Date.now() / 10000) % messages.length];
+
+  const displayName = userProfile?.name || (isDemoAuthenticated ? "Chef" : "Guest Chef");
+  const displayAvatar = userProfile?.image || "https://ui-avatars.com/api/?name=Chef&background=6366f1&color=fff";
+
+  return (
+    <div className="flex items-center gap-3">
+      {/* Clickable Profile Avatar & Badge */}
+      <div 
+        onClick={() => {
+          onNavigateProfile();
+          setToolsActiveTab("profile"); // Drops them straight into My Settings
+        }}
+        className="flex items-center gap-2.5 group cursor-pointer bg-gray-50 hover:bg-gray-100 px-3 py-1.5 rounded-2xl border border-gray-200/80 transition-all"
+        title="View Profile Settings"
+      >
+        {/* Avatar and name markup */}
+        <div className="relative">
+          <img 
+            src={displayAvatar} 
+            alt={displayName} 
+            className="w-8 h-8 rounded-full object-cover border-2 border-white shadow-sm group-hover:scale-105 transition-transform" 
+          />
+          {/* Active Status / Pro Badge Dot */}
+          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></span>
+        </div>
+        <div className="hidden sm:block text-left">
+          <div className="text-xs font-bold text-gray-900 leading-tight flex items-center gap-1">
+            <span>{displayName}</span>
+            {userProfile?.creatorProgress >= 100 && <Crown className="w-3 h-3 text-yellow-500 inline" />}
+          </div>
+          <p className="text-[10px] text-gray-500 font-medium truncate max-w-[160px]">
+            {message}
+          </p>
+        </div>
       </div>
     </div>
   );
@@ -4197,6 +4511,12 @@ const App = () => {
     if (tab === activeTab) return; // Prevents duplicate history spam
     setActiveTabState(tab);
     window.history.pushState({ tab }, "", `/${tab}`);
+    if (typeof window.gtag === "function") {
+      window.gtag('event', 'page_view', {
+        page_path: `/${tab}`,
+        page_title: `Pantry Chef - ${tab.charAt(0).toUpperCase() + tab.slice(1)}`
+      });
+    }
   };
   // 🚀 END NATIVE ROUTER
 
@@ -4233,6 +4553,50 @@ const App = () => {
   const [newItemCategory, setNewItemCategory] = useState("Other");
   const [newItemUnit, setNewItemUnit] = useState("pcs");
   const [newItemQty, setNewItemQty] = useState(1);
+  // 👉 ADDED FOR MULTILINE BULK IMPORT
+const [quickAddTab, setQuickAddTab] = useState("single"); // 'single' or 'bulk'
+const [bulkText, setBulkText] = useState("");
+
+const handleBulkAdd = async (e) => {
+  e?.preventDefault();
+  if (!bulkText.trim()) return;
+  setLoading(true);
+  setStatus("Parsing bulk list...");
+
+  const lines = bulkText.split("\n").filter((l) => l.trim().length > 0);
+  const batch = writeBatch(db);
+  const path = `/artifacts/${appId}/users/${effectiveUserId}/inventory`;
+
+  lines.forEach((line) => {
+    // Splits by comma: Name, Qty, Expiration (e.g. 3d, 7d, 1m), Location (Pantry, Fridge, Freezer)
+    const parts = line.split(",").map((p) => p.trim());
+    const name = parts[0] || "Item";
+    const qty = parseFloat(parts[1]) || 1;
+    const expTag = parts[2] ? parts[2].toLowerCase() : "7d";
+    const loc = parts[3] ? parts[3] : "Pantry";
+
+    let days = 7;
+    if (expTag.endsWith("d")) days = parseInt(expTag) || 7;
+    else if (expTag.endsWith("m")) days = 30;
+
+    const newRef = doc(collection(db, path));
+    batch.set(newRef, {
+      name,
+      quantity: qty,
+      unit: "pcs",
+      location: loc,
+      category: "Other",
+      expiryDate: getTimestampInDays(days),
+      timestamp: serverTimestamp(),
+    });
+  });
+
+  await batch.commit();
+  setBulkText("");
+  setLoading(false);
+  setStatus(`Added ${lines.length} items!`);
+  setTimeout(() => setStatus(""), 2000);
+};
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submissionIngredients, setSubmissionIngredients] = useState([
     { name: "", quantity: "", unit: "count" },
@@ -4254,6 +4618,10 @@ const App = () => {
   const hasAutoLoaded = useRef(false);
   const [isVoiceProcessing, setIsVoiceProcessing] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [communitySearchQuery, setCommunitySearchQuery] = useState("");
+  const [showShareModal, setShowShareModal] = useState(false);
+  const [redirectModalData, setRedirectModalData] = useState(null);
+  const [toolsActiveTab, setToolsActiveTab] = useState("converter");
 
   // NEW: Recipe Ingestor States
   const [showIngestModal, setShowIngestModal] = useState(false);
@@ -4764,8 +5132,13 @@ const App = () => {
         category: newItemCategory,
         timestamp: serverTimestamp(),
       });
+    
     setNewItemName("");
     setLoading(false);
+
+    // 👉 Auto-focus back to the quick-add input for rapid continuous typing (#23)
+    const inputEl = document.querySelector('input[placeholder="Add item name..."]');
+    if (inputEl) inputEl.focus();
   };
   const logWaste = async (item, qty) => {
     let cost = item.lastCost || 0;
@@ -4801,6 +5174,7 @@ const App = () => {
         );
       } else {
         await logWaste(item, item.quantity);
+        await logAnalyticsEvent("waste_logged", { itemName: item.name, category: item.category });
         await deleteDoc(
           doc(db, `/artifacts/${appId}/users/${effectiveUserId}/inventory`, id)
         );
@@ -4870,6 +5244,7 @@ const App = () => {
       });
       await batch.commit();
       setStatus("Done!");
+      await logAnalyticsEvent("receipt_scanned", { itemCount: items.length });
       setTimeout(() => setStatus(""), 2000);
     } catch (err) {
       setStatus("Error");
@@ -4960,6 +5335,7 @@ const App = () => {
       const processedRecipes = processRecipesAgainstInventory(res);
       setAiRecipes(processedRecipes.map((r) => ({ ...r, isAI: !r.isDB })));
       setRecipeView("discover");
+      await logAnalyticsEvent("recipes_generated", { mode, count: res.length });
     } catch (err) {
       console.error(err);
       setStatus("AI Error: " + (err.message || "Unknown"));
@@ -5069,6 +5445,11 @@ const App = () => {
     });
     await batch.commit();
     setGroceryInput("");
+
+    // 👉 Force explicit toast state trigger here
+    setNotification(`🛒 Added ${itemsArray.length} item(s) to your shopping list!`);
+    setTimeout(() => setNotification(null), 3000);
+
     setActiveTab("shopping");
   };
   const toggleGroceryItem = async (id, currentStatus) => {
@@ -5340,19 +5721,7 @@ const App = () => {
         onRecipeClick={(r) => setActiveRecipe(r)}
       />
     );
-  if (showMealPrep) {
-  return (
-    <MealPrepView 
-      onClose={() => setShowMealPrep(false)} 
-      recipes={recipes || communityRecipes || []}
-      pantryItems={pantryItems || []}
-      onScheduleMeal={(prepData) => {
-        console.log("Meal Prep Scheduled:", prepData);
-        // Handle mapping into calendar/state here
-      }}
-    />
-  );
-}
+  
   if (showCheckout)
     return (
       <CheckoutModal
@@ -5376,7 +5745,8 @@ const App = () => {
   return (
     <div className="flex flex-col h-screen bg-gray-50 md:ml-64 max-w-full md:max-w-none shadow-2xl overflow-hidden relative">
       <div className="p-4 pt-8 bg-white border-b flex items-center justify-between z-20">
-        <div className="flex items-center gap-2">
+        {/* Mobile-Only Logo Header */}
+        <div className="flex items-center gap-2 md:hidden">
           <div className="p-2 bg-indigo-600 rounded-lg shadow-lg shadow-indigo-100">
             <Utensils className="text-white w-5 h-5" />
           </div>
@@ -5385,12 +5755,32 @@ const App = () => {
           </h1>
         </div>
 
+        {/* Desktop & Mobile Dynamic Chef Greeting Banner */}
+        <div className="hidden md:flex items-center">
+          <DynamicHeaderBanner 
+            activeTab={activeTab} 
+            userProfile={userProfile} 
+            isDemoAuthenticated={isDemoAuthenticated}
+            onNavigateProfile={() => setActiveTab("profile")}
+          />
+        </div>
+
         <div className="flex items-center gap-3">
-          {/* Real Auth Status & Logout */}
+          {/* On mobile, show a compact avatar trigger too */}
+          <div className="md:hidden">
+            <DynamicHeaderBanner 
+              activeTab={activeTab} 
+              userProfile={userProfile} 
+              isDemoAuthenticated={isDemoAuthenticated}
+              onNavigateProfile={() => setActiveTab("profile")}
+            />
+          </div>
+
+          {/* Real Auth Status & Admin Pill / Logout */}
           {isDemoAuthenticated && !customId && (
             <div className="flex items-center gap-2">
               {isAdmin && (
-                <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2 py-1 rounded-full flex items-center">
+                <span className="bg-indigo-100 text-indigo-700 text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center">
                   <Briefcase className="w-3 h-3 mr-1" /> ADMIN
                 </span>
               )}
@@ -5399,7 +5789,7 @@ const App = () => {
                   if (auth) await signOut(auth);
                   window.location.reload();
                 }}
-                className="p-2 bg-gray-100 rounded-full hover:bg-red-50 text-gray-500 hover:text-red-500 transition-colors"
+                className="p-2 bg-gray-100 rounded-full hover:bg-red-50 text-gray-500 hover:text-red-500 transition-colors cursor-pointer"
                 title="Sign Out"
               >
                 <LogOut className="w-4 h-4" />
@@ -5419,7 +5809,7 @@ const App = () => {
                   setCustomId("");
                   window.location.reload();
                 }}
-                className="p-1 bg-white rounded-full hover:bg-red-50 text-purple-700"
+                className="p-1 bg-white rounded-full hover:bg-red-50 text-purple-700 cursor-pointer"
               >
                 <LogOut className="w-3 h-3" />
               </button>
@@ -5455,6 +5845,7 @@ const App = () => {
             
             {/* LEFT WORKSPACE (Takes 2 columns) */}
             <div className="md:col-span-2 space-y-4">
+              {/* Receipt Scan & Voice Input Header Row */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                 <label className="bg-indigo-600 rounded-2xl p-4 text-white shadow-xl relative overflow-hidden active:scale-95 transition-all cursor-pointer flex flex-col items-center justify-center text-center">
                   <Scan className="w-6 h-6 mb-2" />
@@ -5472,85 +5863,189 @@ const App = () => {
                 </div>
               </div>
 
+              {/* Quick Add / Multiline Importer Container */}
               <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm mb-4">
-                <div className="flex justify-between items-center mb-1">
+                <div className="flex justify-between items-center mb-3 border-b border-gray-100 pb-2">
                   <div className="flex items-center gap-2">
                     <Plus className="w-5 h-5 text-indigo-600" />
-                    <span className="font-bold text-xs text-gray-800 uppercase">Quick Add Item</span>
+                    <span className="font-bold text-xs text-gray-800 uppercase">Add Inventory</span>
                   </div>
-                  <select
-                    value={newItemCategory}
-                    onChange={(e) => setNewItemCategory(e.target.value)}
-                    className="text-[10px] bg-gray-50 border border-gray-200 rounded px-1.5 py-1 outline-none"
-                  >
-                    {["Produce", "Protein", "Dairy", "Grains", "Spices", "Canned", "Frozen", "Snacks", "Beverages", "Other"].map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-                <form onSubmit={handleAddManual} className="mt-2 space-y-2">
-                  <input
-                    value={newItemName}
-                    onChange={(e) => setNewItemName(e.target.value)}
-                    placeholder="Add item name..."
-                    className="w-full p-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:border-indigo-500 outline-none"
-                  />
-                  <div className="flex gap-2 items-center">
-                    <input
-                      type="number"
-                      value={newItemQty}
-                      onChange={(e) => setNewItemQty(Number(e.target.value))}
-                      className="w-16 p-2 bg-gray-50 border border-gray-200 rounded-xl text-xs text-center outline-none"
-                    />
-                    <select
-                      value={newItemUnit}
-                      onChange={(e) => setNewItemUnit(e.target.value)}
-                      className="flex-1 text-xs bg-gray-50 border border-gray-200 rounded-xl px-2 py-2 outline-none"
-                    >
-                      {["pcs", "oz", "lb", "g", "kg", "cup", "ml", "l", "can", "box", "bag", "tsp", "tbsp"].map((u) => (
-                        <option key={u} value={u}>{u}</option>
-                      ))}
-                    </select>
+                  
+                  {/* Mode Switcher */}
+                  <div className="flex bg-gray-100 p-0.5 rounded-lg text-[10px] font-bold">
                     <button
-                      type="submit"
-                      className="px-4 py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-sm hover:bg-indigo-700"
+                      type="button"
+                      onClick={() => setQuickAddTab("single")}
+                      className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                        quickAddTab === "single" ? "bg-white shadow text-indigo-600" : "text-gray-500"
+                      }`}
                     >
-                      ADD
+                      Single Item
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuickAddTab("bulk")}
+                      className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                        quickAddTab === "bulk" ? "bg-white shadow text-indigo-600" : "text-gray-500"
+                      }`}
+                    >
+                      📋 Multiline Paste
                     </button>
                   </div>
-                </form>
+                </div>
+
+                {quickAddTab === "single" ? (
+                  <form onSubmit={handleAddManual} className="space-y-2">
+                    <input
+                      value={newItemName}
+                      onChange={(e) => setNewItemName(e.target.value)}
+                      placeholder="Add item name..."
+                      className="w-full p-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:border-indigo-500 outline-none"
+                    />
+                    <div className="grid grid-cols-3 gap-2">
+                      <div className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-xl px-2">
+                        <input
+                          type="number"
+                          value={newItemQty}
+                          onChange={(e) => setNewItemQty(Number(e.target.value))}
+                          className="w-10 text-xs text-center outline-none bg-transparent"
+                        />
+                        <select
+                          value={newItemUnit}
+                          onChange={(e) => setNewItemUnit(e.target.value)}
+                          className="text-[10px] bg-transparent font-medium outline-none cursor-pointer flex-1"
+                        >
+                          {["pcs", "oz", "lb", "g", "kg", "cup", "ml", "l", "can", "box", "bag"].map((u) => (
+                            <option key={u} value={u}>{u}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <select
+                        value={newItemCategory}
+                        onChange={(e) => setNewItemCategory(e.target.value)}
+                        className="text-xs bg-gray-50 border border-gray-200 rounded-xl px-2 py-2 outline-none cursor-pointer"
+                      >
+                        {["Produce", "Protein", "Dairy", "Grains", "Spices", "Canned", "Frozen", "Snacks", "Beverages", "Other"].map((c) => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </select>
+
+                      <button
+                        type="submit"
+                        className="py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-sm hover:bg-indigo-700 cursor-pointer"
+                      >
+                        ADD ITEM
+                      </button>
+                    </div>
+                  </form>
+                ) : (
+                  <form onSubmit={handleBulkAdd} className="space-y-2">
+                    <p className="text-[10px] text-gray-400">Format each line as: <code className="bg-gray-100 p-0.5 rounded font-mono text-indigo-600">Item, Quantity, Expiration (e.g. 5d), Location</code></p>
+                    <textarea
+                      value={bulkText}
+                      onChange={(e) => setBulkText(e.target.value)}
+                      placeholder={`Milk, 1, 5d, Fridge\nChicken, 2, 3d, Freezer\nSpinach, 1, 4d, Fridge`}
+                      className="w-full h-24 p-2 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none resize-none font-mono"
+                    />
+                    <button
+                      type="submit"
+                      className="w-full py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-md hover:bg-indigo-700 cursor-pointer"
+                    >
+                      Import All Lines
+                    </button>
+                  </form>
+                )}
               </div>
 
-              <div className="flex justify-between items-center mb-1">
+              {/* Pantry List Header */}
+              <div className="flex justify-between items-center mb-2">
                 <h3 className="font-bold text-gray-800">My Pantry</h3>
                 <div className="flex gap-2">
                   <button
+                    onClick={() => setPantryView(pantryView === "matrix" ? "list" : "matrix")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 border ${
+                      pantryView === "matrix"
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100"
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" /> {pantryView === "matrix" ? "Exit Organizer" : "⚡ Organize Pantry"}
+                  </button>
+                  <button
                     onClick={handleAutoCategorize}
-                    className="p-1.5 rounded-md bg-indigo-50 text-indigo-600 shadow-sm border border-indigo-100"
+                    className="p-1.5 rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200 cursor-pointer"
                     title="Auto-Categorize"
                   >
                     <RefreshCw className="w-4 h-4" />
                   </button>
-                  <div className="flex bg-gray-100 p-1 rounded-lg">
-                    <button
-                      onClick={() => setPantryView("list")}
-                      className={`p-1.5 rounded-md ${pantryView === "list" ? "bg-white shadow text-indigo-600" : "text-gray-400"}`}
-                    >
-                      <List className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => setPantryView("category")}
-                      className={`p-1.5 rounded-md ${pantryView === "category" ? "bg-white shadow text-indigo-600" : "text-gray-400"}`}
-                    >
-                      <Layers className="w-4 h-4" />
-                    </button>
-                  </div>
                 </div>
               </div>
 
+              {/* Pantry Items Mapping */}
+              {/* Pantry View Modes */}
               <div className="space-y-1 pb-4">
                 {inventory.length ? (
-                  pantryView === "list" ? (
+                  pantryView === "matrix" ? (
+                    /* BULK PANTRY ORGANIZER MATRIX VIEW */
+                    <div className="bg-white rounded-2xl border border-gray-200 p-3 shadow-sm space-y-2 animate-in fade-in">
+                      <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider px-1 flex justify-between">
+                        <span>Item Name</span>
+                        <span className="pr-12">Category / Location / Qty</span>
+                      </div>
+                      <div className="max-h-96 overflow-y-auto space-y-2 pr-1">
+                        {inventory.map((item) => (
+                          <div key={item.id} className="flex items-center justify-between p-2 bg-gray-50 rounded-xl gap-2 border border-gray-100">
+                            <span className="text-xs font-bold text-gray-800 truncate flex-1">{item.name}</span>
+                            
+                            {/* Category selector */}
+                            <select
+                              value={item.category || "Other"}
+                              onChange={async (e) => {
+                                await updateDoc(doc(db, `/artifacts/${appId}/users/${effectiveUserId}/inventory`, item.id), {
+                                  category: e.target.value
+                                });
+                              }}
+                              className="text-[10px] bg-white border border-gray-200 rounded-lg p-1 outline-none font-medium cursor-pointer"
+                            >
+                              {["Produce", "Protein", "Dairy", "Grains", "Spices", "Canned", "Frozen", "Snacks", "Beverages", "Other"].map((c) => (
+                                <option key={c} value={c}>{c}</option>
+                              ))}
+                            </select>
+
+                            {/* Location selector */}
+                            <select
+                              value={item.location || "Pantry"}
+                              onChange={async (e) => {
+                                await updateDoc(doc(db, `/artifacts/${appId}/users/${effectiveUserId}/inventory`, item.id), {
+                                  location: e.target.value
+                                });
+                              }}
+                              className="text-[10px] bg-white border border-gray-200 rounded-lg p-1 outline-none font-medium cursor-pointer"
+                            >
+                              <option>Pantry</option>
+                              <option>Fridge</option>
+                              <option>Freezer</option>
+                            </select>
+
+                            {/* Quantity Stepper */}
+                            <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-0.5">
+                              <button
+                                onClick={() => handleUpdateQty(item.id, -1)}
+                                className="w-5 h-5 flex items-center justify-center text-xs font-bold text-gray-500 hover:bg-gray-100 rounded cursor-pointer"
+                              >-</button>
+                              <span className="text-xs font-mono font-bold w-4 text-center">{item.quantity}</span>
+                              <button
+                                onClick={() => handleUpdateQty(item.id, 1)}
+                                className="w-5 h-5 flex items-center justify-center text-xs font-bold text-gray-500 hover:bg-gray-100 rounded cursor-pointer"
+                              >+</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    /* STANDARD LIST VIEW */
                     inventory.map((item) => (
                       <InventoryItem
                         key={item.id}
@@ -5562,24 +6057,6 @@ const App = () => {
                         onUpdate={handleUpdateItem}
                         onFindRecipes={(name) => handleGetAIRecipes(name)}
                       />
-                    ))
-                  ) : (
-                    Object.keys(groupedInventory).sort().map((cat) => (
-                      <div key={cat}>
-                        <div className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-2 mt-4 ml-1">{cat}</div>
-                        {groupedInventory[cat].map((item) => (
-                          <InventoryItem
-                            key={item.id}
-                            item={item}
-                            onUpdate={handleUpdateItem}
-                            onUpdateQty={handleUpdateQty}
-                            onDelete={async (id) =>
-                              deleteDoc(doc(db, `/artifacts/${appId}/users/${effectiveUserId}/inventory`, id))
-                            }
-                            onFindRecipes={(name) => handleGetAIRecipes(name)}
-                          />
-                        ))}
-                      </div>
                     ))
                   )
                 ) : (
@@ -5601,6 +6078,8 @@ const App = () => {
                   onViewAll={() => setActiveTab("profile")}
                 />
               </div>
+
+              <PantryValuationCard inventory={inventory} />
 
               <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
                 <h4 className="font-bold text-gray-900 text-sm mb-3 flex items-center gap-2">
@@ -5626,7 +6105,7 @@ const App = () => {
                   className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
                     recipeView === "discover"
                       ? "bg-white shadow text-indigo-600"
-                      : "text-gray-500"
+                      : "text-gray-500 cursor-pointer"
                   }`}
                 >
                   Discover
@@ -5636,7 +6115,7 @@ const App = () => {
                   className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
                     recipeView === "plan"
                       ? "bg-white shadow text-indigo-600"
-                      : "text-gray-500"
+                      : "text-gray-500 cursor-pointer"
                   }`}
                 >
                   Meal Plan
@@ -5646,7 +6125,7 @@ const App = () => {
                   className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
                     recipeView === "saved"
                       ? "bg-white shadow text-indigo-600"
-                      : "text-gray-500"
+                      : "text-gray-500 cursor-pointer"
                   }`}
                 >
                   Saved
@@ -5666,14 +6145,14 @@ const App = () => {
                   </div>
                   <button
                     onClick={() => setShowMealPrep(true)}
-                    className="w-full py-3 bg-gradient-to-r from-green-500 to-teal-600 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg mb-2"
+                    className="w-full py-3 bg-gradient-to-r from-green-500 to-teal-600 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg mb-2 cursor-pointer"
                   >
                     <LayoutGrid className="w-4 h-4" /> Smart Meal Prep Mode
                   </button>
                   {/* NEW: Import from URL Button */}
                   <button
                     onClick={() => setShowIngestModal(true)}
-                    className="w-full py-3 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm mb-4 hover:bg-indigo-100 transition-colors"
+                    className="w-full py-3 bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm mb-4 hover:bg-indigo-100 transition-colors cursor-pointer"
                   >
                     <LinkIcon className="w-4 h-4" /> Import Recipe from URL
                   </button>
@@ -5686,7 +6165,7 @@ const App = () => {
                             cuisine: e.target.value,
                           }))
                         }
-                        className="px-3 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-bold text-gray-600 outline-none"
+                        className="px-3 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-bold text-gray-600 outline-none cursor-pointer"
                       >
                         <option value="">All Cuisines</option>
                         {[
@@ -5706,7 +6185,7 @@ const App = () => {
                         <button
                           key={p}
                           onClick={() => toggleFilter("proteins", p)}
-                          className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border ${
+                          className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border cursor-pointer ${
                             activeFilters.proteins.includes(p)
                               ? "bg-indigo-100 text-indigo-700 border-indigo-200"
                               : "bg-white text-gray-600 border-gray-200"
@@ -5721,7 +6200,7 @@ const App = () => {
                         <button
                           key={v}
                           onClick={() => toggleFilter("vegetables", v)}
-                          className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border ${
+                          className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-bold border cursor-pointer ${
                             activeFilters.vegetables.includes(v)
                               ? "bg-green-100 text-green-700 border-green-200"
                               : "bg-white text-gray-600 border-gray-200"
@@ -5768,7 +6247,7 @@ const App = () => {
                   <div className="grid grid-cols-2 gap-2">
                     <button
                       onClick={() => handleGetAIRecipes("recipe")}
-                      className="py-3 bg-indigo-600 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg"
+                      className="py-3 bg-indigo-600 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg cursor-pointer"
                     >
                       <Zap className="w-4 h-4" /> Generate Recipes{" "}
                       <span className="ml-1 bg-white/20 px-1.5 rounded text-[10px]">
@@ -5777,7 +6256,7 @@ const App = () => {
                     </button>
                     <button
                       onClick={() => handleGetAIRecipes("meal")}
-                      className="py-3 bg-indigo-500 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg"
+                      className="py-3 bg-indigo-500 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-lg cursor-pointer"
                     >
                       <Utensils className="w-4 h-4" /> Generate Meals
                     </button>
@@ -5848,6 +6327,24 @@ const App = () => {
                   plan={mealPlan}
                   onAddMeal={() => {}}
                   onDeleteMeal={handleDeleteMeal}
+                  onGenerateDayPlan={(day) => {
+                    // Triggers AI meal generation using current inventory
+                    handleGetAIRecipes("meal");
+                  }}
+                  onPlanExpiring={(day) => {
+                    // Filters for expiring inventory items and runs AI search
+                    const expiring = inventory.filter((i) => {
+                      const expiry = i.expiryDate?.toDate ? i.expiryDate.toDate() : new Date();
+                      const daysLeft = Math.ceil((expiry - new Date()) / (1000 * 60 * 60 * 24));
+                      return daysLeft <= 3;
+                    });
+                    const topExpiring = expiring.map((i) => i.name).join(", ");
+                    setSearchQuery(topExpiring || "expiring items");
+                    handleGetAIRecipes("recipe");
+                  }}
+                  onBrowseRecipes={() => {
+                    setRecipeView("discover");
+                  }}
                 />
               )}
               {recipeView === "saved" && (
@@ -5931,7 +6428,7 @@ const App = () => {
                         <button
                           key={i}
                           onClick={() => addToGroceryList(s)}
-                          className="w-full text-left p-3 hover:bg-gray-50 text-sm border-b border-gray-50 last:border-0"
+                          className="w-full text-left p-3 hover:bg-gray-50 text-sm border-b border-gray-50 last:border-0 cursor-pointer"
                         >
                           <span className="font-bold text-indigo-600">+</span> {s}
                         </button>
@@ -5957,7 +6454,7 @@ const App = () => {
                       <button
                         key={i}
                         onClick={() => addToGroceryList(s)}
-                        className="px-3 py-1 bg-white text-indigo-600 rounded-full text-xs font-bold shadow-sm border border-indigo-100 flex items-center gap-1"
+                        className="px-3 py-1 bg-white text-indigo-600 rounded-full text-xs font-bold shadow-sm border border-indigo-100 flex items-center gap-1 cursor-pointer"
                       >
                         <Plus className="w-3 h-3" /> {s}
                       </button>
@@ -5969,17 +6466,32 @@ const App = () => {
               <div className="bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm">
                 {groceryList.filter((i) => !i.purchased).map((item) => {
                   const lastBuy = getLastPrice(item.name);
+
+                  const existingPantryItem = inventory.find((inv) =>
+                    inv.name.toLowerCase().includes(item.name.toLowerCase()) ||
+                    item.name.toLowerCase().includes(inv.name.toLowerCase())
+                  );
+
                   return (
                     <div
                       key={item.id}
                       className="flex justify-between items-center p-3.5 border-b border-gray-100 last:border-0 group hover:bg-gray-50/50"
                     >
                       <div className="flex items-center gap-3">
-                        <button onClick={() => toggleGroceryItem(item.id, item.purchased)}>
+                        <button onClick={() => toggleGroceryItem(item.id, item.purchased)} className="cursor-pointer">
                           <Square className="w-5 h-5 text-indigo-500" />
                         </button>
                         <div>
-                          <span className="text-sm font-medium text-gray-800 block">{item.name}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium text-gray-800">{item.name}</span>
+                            
+                            {/* 👉 Pantry Stock Badge Warning */}
+                            {existingPantryItem && (
+                              <span className="text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                <CheckCircle className="w-2.5 h-2.5" /> In Pantry ({existingPantryItem.quantity} {existingPantryItem.unit})
+                              </span>
+                            )}
+                          </div>
                           {lastBuy && (
                             <span className="text-[10px] text-gray-400">
                               Last paid: ${lastBuy.price} on {lastBuy.date.toLocaleDateString()}
@@ -5990,11 +6502,11 @@ const App = () => {
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleFindDeals(item.name)}
-                          className="text-[10px] font-bold text-blue-500 bg-blue-50 px-2.5 py-1 rounded-lg"
+                          className="text-[10px] font-bold text-blue-500 bg-blue-50 px-2.5 py-1 rounded-lg cursor-pointer"
                         >
                           Find Deal
                         </button>
-                        <button onClick={() => deleteGroceryItem(item.id)}>
+                        <button onClick={() => deleteGroceryItem(item.id)} className="cursor-pointer">
                           <Trash2 className="w-4 h-4 text-red-200 hover:text-red-500" />
                         </button>
                       </div>
@@ -6013,19 +6525,19 @@ const App = () => {
                         className="flex justify-between items-center p-3 border-b border-gray-200 last:border-0 opacity-50"
                       >
                         <div className="flex items-center gap-3">
-                          <button onClick={() => toggleGroceryItem(item.id, item.purchased)}>
+                          <button onClick={() => toggleGroceryItem(item.id, item.purchased)} className="cursor-pointer">
                             <CheckSquare className="w-5 h-5 text-green-500" />
                           </button>
                           <span className="text-sm font-medium line-through text-gray-800">{item.name}</span>
                         </div>
-                        <button onClick={() => deleteGroceryItem(item.id)}>
+                        <button onClick={() => deleteGroceryItem(item.id)} className="cursor-pointer">
                           <Trash2 className="w-4 h-4 text-gray-400" />
                         </button>
                       </div>
                     ))}
                     <button
                       onClick={() => setShowCheckout(true)}
-                      className="w-full py-3 bg-green-600 text-white font-bold text-sm flex items-center justify-center gap-2 hover:bg-green-700 transition-colors"
+                      className="w-full py-3 bg-green-600 text-white font-bold text-sm flex items-center justify-center gap-2 hover:bg-green-700 transition-colors cursor-pointer"
                     >
                       Checkout Selected <DollarSign className="w-4 h-4" />
                     </button>
@@ -6037,7 +6549,7 @@ const App = () => {
               </div>
             </div>
 
-            {/* RIGHT SIDEBAR WIDGET COLUMN (Quick Delivery / Partner Store Links) */}
+            {/* RIGHT SIDEBAR WIDGET COLUMN (Partner Store Quick Links) */}
             <div className="hidden md:block space-y-4">
               <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-3">
                 <h4 className="font-bold text-gray-900 text-sm mb-2 flex items-center gap-2">
@@ -6046,40 +6558,46 @@ const App = () => {
                 
                 <button
                   onClick={() =>
-                    window.open(
-                      `https://www.walmart.com/search?q=${encodeURIComponent(
+                    setRedirectModalData({
+                      title: "Walmart",
+                      url: `https://www.walmart.com/search?q=${encodeURIComponent(
                         groceryList.filter((i) => !i.purchased).map((g) => g.name).join(" ")
                       )}`,
-                      "_blank"
-                    )
+                      sponsorTag: "Grocery Partner",
+                      description: "Compare prices and schedule contactless delivery directly with Walmart."
+                    })
                   }
-                  className="w-full py-3 bg-[#0071dc] text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm hover:opacity-95 transition-opacity"
+                  className="w-full py-3 bg-[#0071dc] text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 shadow-sm hover:opacity-95 transition-opacity cursor-pointer"
                 >
                   <Store className="w-4 h-4" /> Walmart Delivery
                 </button>
                 <button
                   onClick={() =>
-                    window.open(
-                      `https://www.instacart.com/store/s?k=${encodeURIComponent(
+                    setRedirectModalData({
+                      title: "Instacart",
+                      url: `https://www.instacart.com/store/s?k=${encodeURIComponent(
                         groceryList.filter((i) => !i.purchased).map((g) => g.name).join(", ")
                       )}`,
-                      "_blank"
-                    )
+                      sponsorTag: "Delivery Partner",
+                      description: "Sync your shopping cart items seamlessly with local grocery couriers."
+                    })
                   }
-                  className="w-full py-3 bg-[#e8f5e9] border border-green-600 text-green-700 rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-green-50 transition-colors"
+                  className="w-full py-3 bg-[#e8f5e9] border border-green-600 text-green-700 rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-green-50 transition-colors cursor-pointer"
                 >
                   <ShoppingCart className="w-4 h-4" /> Instacart
                 </button>
                 <button
                   onClick={() =>
-                    window.open(
-                      `https://www.amazon.com/s?k=${encodeURIComponent(
+                    setRedirectModalData({
+                      title: "Amazon Fresh",
+                      url: `https://www.amazon.com/s?k=${encodeURIComponent(
                         groceryList.filter((i) => !i.purchased).map((g) => g.name).join(", ")
                       )}&i=amazonfresh`,
-                      "_blank"
-                    )
+                      sponsorTag: "Delivery Partner",
+                      description: "Order fresh groceries and pantry staples directly through Amazon Fresh."
+                    })
                   }
-                  className="w-full py-3 bg-[#232f3e] text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-black transition-colors"
+                  className="w-full py-3 bg-[#232f3e] text-white rounded-xl font-bold text-xs flex items-center justify-center gap-2 hover:bg-black transition-colors cursor-pointer"
                 >
                   <Package className="w-4 h-4" /> Amazon Fresh
                 </button>
@@ -6093,7 +6611,11 @@ const App = () => {
             
             {/* LEFT WORKSPACE (Takes 2 columns) */}
             <div className="md:col-span-2 space-y-6">
-              <BudgetScreen history={purchaseHistory} wasteHistory={wasteHistory} />
+              <BudgetScreen 
+                history={purchaseHistory} 
+                wasteHistory={wasteHistory} 
+                inventory={inventory} 
+              />
             </div>
 
             {/* RIGHT SIDEBAR WIDGET COLUMN */}
@@ -6125,127 +6647,87 @@ const App = () => {
             
             {/* LEFT WORKSPACE: Community Feed & Search (Takes 2 columns) */}
             <div className="md:col-span-2 space-y-4">
+              {/* Community Tab Search Bar */}
               <div className="relative">
                 <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
                 <input
+                  value={communitySearchQuery}
+                  onChange={(e) => setCommunitySearchQuery(e.target.value)}
                   placeholder="Find Chefs or Recipes..."
                   className="w-full pl-9 pr-4 py-3 bg-white border border-gray-200 rounded-xl text-sm focus:border-indigo-500 outline-none shadow-sm"
                 />
+                {communitySearchQuery && (
+                  <button 
+                    onClick={() => setCommunitySearchQuery("")}
+                    className="absolute right-3 top-3.5 text-xs text-gray-400 hover:text-gray-600 font-bold cursor-pointer"
+                  >
+                    Clear
+                  </button>
+                )}
               </div>
-
               <h3 className="font-bold text-gray-800 text-sm uppercase tracking-wider pt-2">Community Feed</h3>
 
+              {/* Filtered Community Recipe Mapping */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {communityRecipes.map((r, index) => {
-                  const authorUser = DEMO_USERS.find(
-                    (u) => u.id === r.createdBy
-                  ) || {
-                    name: r.authorName,
-                    image: r.authorImage,
-                    role: "Community Chef",
-                    profile: { challenges: {} },
-                    isCreator: false,
-                    isBrand: false,
-                  };
+                {communityRecipes
+                  .filter((r) => {
+                    if (!communitySearchQuery.trim()) return true;
+                    const query = communitySearchQuery.toLowerCase();
+                    const titleMatch = r.title?.toLowerCase().includes(query) || false;
+                    const descMatch = r.description?.toLowerCase().includes(query) || false;
+                    const authorMatch = r.authorName?.toLowerCase().includes(query) || false;
+                    return titleMatch || descMatch || authorMatch;
+                  })
+                  .map((r, index) => {
+                    const authorUser = DEMO_USERS.find(
+                      (u) => u.id === r.createdBy
+                    ) || {
+                      name: r.authorName || "Community Chef",
+                      image: r.authorImage,
+                      role: "Community Chef",
+                      profile: { challenges: {} },
+                      isCreator: false,
+                      isBrand: false,
+                    };
 
-                  return (
-                    <React.Fragment key={r.id}>
-                      <RecipeCard
-                        recipe={{
-                          ...r,
-                          matchPercentage: calculateMatch(r.allIngredients),
-                        }}
-                        isUserRecipe
-                        onClick={() =>
-                          handleSetActiveRecipe({
+                    return (
+                      <React.Fragment key={r.id}>
+                        <RecipeCard
+                          recipe={{
                             ...r,
                             matchPercentage: calculateMatch(r.allIngredients),
-                          })
-                        }
-                        onAddToPlan={handleAddToPlan}
-                        isSaved={savedRecipes.some((s) => s.title === r.title)}
-                        onToggleSave={handleToggleSave}
-                        onVote={handleVote}
-                        onAuthorClick={() => setViewingProfile(authorUser)}
-                      />
-                      {(index + 1) % 5 === 0 && <NativeAd />}
-                    </React.Fragment>
-                  );
-                })}
+                          }}
+                          isUserRecipe
+                          onClick={() =>
+                            handleSetActiveRecipe({
+                              ...r,
+                              matchPercentage: calculateMatch(r.allIngredients),
+                            })
+                          }
+                          onAddToPlan={handleAddToPlan}
+                          isSaved={savedRecipes.some((s) => s.title === r.title)}
+                          onToggleSave={handleToggleSave}
+                          onVote={handleVote}
+                          onAuthorClick={() => setViewingProfile(authorUser)}
+                        />
+                        {(index + 1) % 5 === 0 && <NativeAd />}
+                      </React.Fragment>
+                    );
+                  })}
               </div>
             </div>
 
             {/* RIGHT SIDEBAR WORKSPACE: Share Recipe Form (Takes 1 column on desktop) */}
             <div className="space-y-4">
-              <div className="bg-indigo-600 p-6 rounded-3xl text-white shadow-xl sticky top-4">
-                <h3 className="font-black text-xl mb-1">Share Recipe</h3>
-                <form onSubmit={handleSubmitRecipe} className="space-y-3 mt-4">
-                  <div className="bg-white/10 p-3 rounded-lg border border-white/20 text-center">
-                    <label className="cursor-pointer flex flex-col items-center justify-center gap-2">
-                      <div className="w-full h-28 bg-black/20 rounded-lg flex items-center justify-center overflow-hidden relative">
-                        {recipeImage ? (
-                          <img
-                            src={recipeImage}
-                            alt="Preview"
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="flex flex-col items-center">
-                            <Scan className="w-6 h-6 mb-1" />
-                            <span className="text-[10px] uppercase font-bold opacity-70">
-                              Add Photo
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        onChange={handleImageSelect}
-                        className="hidden"
-                      />
-                    </label>
-                  </div>
-                  <input
-                    name="title"
-                    placeholder="Title"
-                    className="w-full p-2.5 rounded-lg text-black text-sm outline-none"
-                    required
-                  />
-                  <div className="flex gap-2">
-                    <input
-                      name="servings"
-                      type="number"
-                      placeholder="Servings"
-                      className="flex-1 p-2.5 rounded-lg text-black text-sm outline-none"
-                      required
-                    />
-                    <input
-                      name="prepTime"
-                      placeholder="Prep Time"
-                      className="flex-1 p-2.5 rounded-lg text-black text-sm outline-none"
-                    />
-                  </div>
-                  <textarea
-                    name="description"
-                    placeholder="Description"
-                    className="w-full p-2.5 rounded-lg text-black text-sm outline-none h-16"
-                    required
-                  />
-                  <textarea
-                    name="instructions"
-                    placeholder="Instructions"
-                    className="w-full p-2.5 rounded-lg text-black text-sm outline-none h-20"
-                    required
-                  />
-                  <button
-                    type="submit"
-                    disabled={isSubmitting}
-                    className="w-full py-3 bg-white text-indigo-600 font-bold rounded-xl text-xs hover:bg-indigo-50 shadow-sm"
-                  >
-                    POST RECIPE
-                  </button>
-                </form>
+              <div className="bg-indigo-600 p-6 rounded-3xl text-white shadow-xl sticky top-4 text-center space-y-3">
+                <h3 className="font-black text-xl mb-1">Got a Recipe to Share?</h3>
+                <p className="text-xs text-indigo-100">Publish your own creations, tag ingredients, and share with the community feed.</p>
+                <button
+                  onClick={() => setShowShareModal(true)}
+                  className="w-full py-3.5 bg-white text-indigo-600 font-bold rounded-xl text-xs hover:bg-indigo-50 shadow-sm cursor-pointer transition-all"
+                >
+                  ✨ Open Share Studio
+                </button>
               </div>
             </div>
 
@@ -6263,6 +6745,7 @@ const App = () => {
                 onToggleAdmin={handleAdminToggle}
                 isDemoAuthenticated={isDemoAuthenticated}
                 onShowLogin={() => setShowLoginModal(true)}
+                initialSubTab={toolsActiveTab} // Pass this down to control initial subtab
               />
             </div>
 
@@ -6324,7 +6807,7 @@ const App = () => {
               <h3 className="font-black text-lg text-gray-900 flex items-center gap-2">
                 <LinkIcon className="w-5 h-5 text-indigo-600" /> Paste Recipe Link
               </h3>
-              <button onClick={() => setShowIngestModal(false)} className="p-1 hover:bg-gray-100 rounded-full">
+              <button onClick={() => setShowIngestModal(false)} className="p-1 hover:bg-gray-100 rounded-full cursor-pointer">
                 <X className="w-5 h-5 text-gray-400" />
               </button>
             </div>
@@ -6343,7 +6826,7 @@ const App = () => {
               <button
                 type="submit"
                 disabled={isIngesting}
-                className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 disabled:opacity-50"
+                className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
               >
                 {isIngesting ? <Loader className="w-5 h-5 animate-spin" /> : <Download className="w-5 h-5" />}
                 {isIngesting ? "Extracting Recipe..." : "Import Recipe"}
@@ -6363,6 +6846,55 @@ const App = () => {
         />
       )}
 
+      {/* Render as a layered overlay on top of the main UI */}
+      {showMealPrep && (
+        <MealPrepView 
+          onClose={() => setShowMealPrep(false)} 
+          recipes={aiRecipes || communityRecipes || []}
+          pantryItems={inventory || []}
+          onScheduleMeal={(prepData) => {
+            console.log("Meal Prep Scheduled:", prepData);
+          }}
+          onAddToInventory={async (preppedItem) => {
+            try {
+              await addDoc(collection(db, `/artifacts/${appId}/users/${effectiveUserId}/inventory`), {
+                ...preppedItem,
+                expiryDate: getTimestampInDays(5),
+                timestamp: serverTimestamp(),
+              });
+            } catch (e) {
+              console.error("Error syncing to inventory:", e);
+            }
+          }}
+        />
+      )}
+
+      {showShareModal && (
+        <ShareModal
+          onClose={() => setShowShareModal(false)}
+          userProfile={userProfile}
+          pantryItems={inventory || []}
+          onSubmitRecipe={async (recipeData) => {
+            await addDoc(
+              collection(db, `/artifacts/${appId}/public/data/userRecipes`),
+              {
+                ...recipeData,
+                createdAt: serverTimestamp(),
+                createdBy: effectiveUserId,
+                likeCount: 0,
+                isAI: false,
+              }
+            );
+          }}
+        />
+      )}
+
+      <BrandedRedirectModal
+        isOpen={!!redirectModalData}
+        onClose={() => setRedirectModalData(null)}
+        partnerData={redirectModalData}
+      />
+
       {/* Desktop Left Sidebar Navigation */}
       <nav className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-64 bg-white border-r border-gray-200 p-6 z-30 shadow-sm">
         <div className="flex items-center gap-2 mb-8">
@@ -6373,31 +6905,38 @@ const App = () => {
         </div>
         
         <div className="space-y-2 flex-1">
-          <button onClick={() => setActiveTab("pantry")} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${activeTab === "pantry" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50"}`}>
+          <button onClick={() => setActiveTab("pantry")} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${activeTab === "pantry" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50 cursor-pointer"}`}>
             <Home className="w-5 h-5" /> Pantry
           </button>
-          <button onClick={() => setActiveTab("recipes")} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${activeTab === "recipes" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50"}`}>
+          <button onClick={() => setActiveTab("recipes")} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${activeTab === "recipes" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50 cursor-pointer"}`}>
             <CookingPot className="w-5 h-5" /> Cook
           </button>
-          <button onClick={() => setActiveTab("shopping")} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${activeTab === "shopping" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50"}`}>
-            <ShoppingCart className="w-5 h-5" /> Shop
+          <button onClick={() => setActiveTab("shopping")} className={`w-full flex items-center justify-between p-3 rounded-xl font-bold text-sm ${activeTab === "shopping" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50 cursor-pointer"}`}>
+            <div className="flex items-center gap-3">
+              <ShoppingCart className="w-5 h-5" /> Shop
+            </div>
+            {groceryList.filter(i => !i.purchased).length > 0 && (
+              <span className="bg-indigo-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
+                {groceryList.filter(i => !i.purchased).length}
+              </span>
+            )}
           </button>
-          <button onClick={() => setActiveTab("budget")} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${activeTab === "budget" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50"}`}>
+          <button onClick={() => setActiveTab("budget")} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${activeTab === "budget" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50 cursor-pointer"}`}>
             <DollarSign className="w-5 h-5" /> Budget
           </button>
-          <button onClick={() => setActiveTab("community")} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${activeTab === "community" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50"}`}>
+          <button onClick={() => setActiveTab("community")} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${activeTab === "community" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50 cursor-pointer"}`}>
             <Users className="w-5 h-5" /> Social
           </button>
-          <button onClick={() => setActiveTab("profile")} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${activeTab === "profile" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50"}`}>
+          <button onClick={() => setActiveTab("profile")} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${activeTab === "profile" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50 cursor-pointer"}`}>
             <ConfigIcon className="w-5 h-5" /> Tools
           </button>
           <button 
             onClick={() => setShowFeedbackModal(true)} 
-            className="w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm text-gray-500 hover:bg-gray-50 transition-colors">
+            className="w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm text-gray-500 hover:bg-gray-50 transition-colors cursor-pointer">
             <AlertCircle className="w-5 h-5" /> Feedback
           </button>
           {isAdmin && (
-            <button onClick={() => setActiveTab("admin")} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${activeTab === "admin" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50"}`}>
+            <button onClick={() => setActiveTab("admin")} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${activeTab === "admin" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50 cursor-pointer"}`}>
               <Briefcase className="w-5 h-5" /> Admin
             </button>
           )}
@@ -6430,13 +6969,20 @@ const App = () => {
         </button>
         <button
           onClick={() => setActiveTab("shopping")}
-          className={`flex flex-col items-center gap-1 transition-all ${
+          className={`flex flex-col items-center gap-1 transition-all relative ${
             activeTab === "shopping"
               ? "text-indigo-600 scale-110"
               : "text-gray-300"
           }`}
         >
-          <ShoppingCart className="w-5 h-5" />
+          <div className="relative">
+            <ShoppingCart className="w-5 h-5" />
+            {groceryList.filter(i => !i.purchased).length > 0 && (
+              <span className="absolute -top-1 -right-2 bg-indigo-600 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
+                {groceryList.filter(i => !i.purchased).length}
+              </span>
+            )}
+          </div>
           <span className="text-[9px] font-bold">SHOP</span>
         </button>
         <button
