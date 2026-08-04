@@ -236,14 +236,14 @@ const INGREDIENT_TAXONOMY = {
 };
 
 // 👉 LANDMARK: Admin Bulk URL Recipe Ingestor
-const AdminRecipeIngestor = ({ db, appId, effectiveUserId }) => {
+// 👉 LANDMARK: Optimized Admin Bulk URL Ingestor with Duplicate Prevention & Media Extraction
+const AdminRecipeIngestor = ({ db, appId, effectiveUserId, communityRecipes, setActiveTab }) => {
   const [urlList, setUrlList] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [pendingQueue, setPendingQueue] = useState([]);
   const [dailyUsageCount, setDailyUsageCount] = useState(0);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
 
-  // Fetch today's global usage telemetry
   useEffect(() => {
     if (!db) return;
     const todayKey = new Date().toISOString().split('T')[0];
@@ -264,21 +264,17 @@ const AdminRecipeIngestor = ({ db, appId, effectiveUserId }) => {
       setProgress({ current: i + 1, total: urls.length });
       const currentUrl = urls[i];
 
+      // 👉 DUPLICATE URL CHECK: Save tokens if URL already exists in database
+      const alreadyExists = communityRecipes.some(r => r.sourceUrl === currentUrl);
+      if (alreadyExists) {
+        console.log(`Skipping duplicate URL: ${currentUrl}`);
+        continue;
+      }
+
       try {
-        // 1. Fetch the raw HTML using a public CORS proxy so the browser doesn't block it
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(currentUrl)}`;
-        const htmlRes = await fetch(proxyUrl);
-        const htmlData = await htmlRes.json();
-        let rawText = htmlData.contents || "";
-
-        // 2. Strip HTML tags to save tokens and give Gemini clean text
-        rawText = rawText.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').substring(0, 15000);
-
-        // 3. Feed the actual text of the webpage to the AI
-        const prompt = `Extract the recipe from this webpage text. 
-        If there are other recipe links or titles mentioned on the page, list them in relatedLinks.
-        
-        Webpage Text: "${rawText}"
+        const prompt = `Analyze this recipe URL: ${currentUrl}. 
+        Extract the recipe details. Ensure instructions are formatted clearly with numbered steps (e.g. "1. ... 2. ...").
+        Extract the primary recipe image URL (og:image or high-res photo) into the 'image' field, and any video URL into 'videoUrl'.
         
         Return ONLY a valid JSON object matching this schema:
         {
@@ -286,13 +282,14 @@ const AdminRecipeIngestor = ({ db, appId, effectiveUserId }) => {
           "description": "Appetizing summary",
           "prepTime": "30 mins",
           "servings": 4,
+          "image": "https://url-to-image.jpg",
+          "videoUrl": "https://url-to-video-if-any",
           "allIngredients": [{"name": "ingredient name", "quantity": 1, "unit": "cup"}],
-          "instructions": "Step 1... Step 2...",
+          "instructions": "1. Step one instructions...\n2. Step two instructions...",
           "sourceName": "Web Extractor",
           "sourceUrl": "${currentUrl}",
           "nutrition": {"calories": 450, "protein": "25g", "carbs": "40g", "fat": "15g"},
-          "recommendedGear": [],
-          "relatedLinks": ["List any other recipe titles or URLs mentioned on the page"]
+          "recommendedGear": []
         }`;
 
         const payload = {
@@ -305,9 +302,8 @@ const AdminRecipeIngestor = ({ db, appId, effectiveUserId }) => {
 
         setPendingQueue((prev) => [...prev, newRecipe]);
 
-        // Respect Free Tier RPM Limits: Wait 4.5 seconds between each call
         if (i < urls.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 4500));
+          await new Promise(resolve => setTimeout(resolve, 4000));
         }
 
       } catch (err) {
@@ -316,7 +312,7 @@ const AdminRecipeIngestor = ({ db, appId, effectiveUserId }) => {
     }
     
     setIsGenerating(false);
-    setUrlList(""); // Clear list on finish
+    setUrlList("");
   };
 
   const handlePublishRecipe = async (recipe, index) => {
@@ -338,9 +334,18 @@ const AdminRecipeIngestor = ({ db, appId, effectiveUserId }) => {
   return (
     <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-6">
       <div className="flex justify-between items-center border-b pb-4">
-        <div>
-          <h3 className="font-black text-gray-900 text-base">Bulk URL Recipe Ingestor</h3>
-          <p className="text-xs text-gray-500">Paste multiple URLs to extract recipes and burn daily quota.</p>
+        <div className="flex items-center gap-3">
+          {/* 👉 EXIT ADMIN BUTTON */}
+          <button
+            onClick={() => setActiveTab("pantry")}
+            className="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-xl transition-colors cursor-pointer flex items-center gap-1"
+          >
+            ← Return to App
+          </button>
+          <div>
+            <h3 className="font-black text-gray-900 text-base">Bulk URL Recipe Ingestor</h3>
+            <p className="text-xs text-gray-500">Paste multiple URLs. Automatically skips duplicates to save tokens.</p>
+          </div>
         </div>
         <div className="bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-2xl text-right">
           <p className="text-[9px] font-bold text-indigo-400 uppercase">Global AI Usage</p>
@@ -360,12 +365,12 @@ const AdminRecipeIngestor = ({ db, appId, effectiveUserId }) => {
         <button
           onClick={handleBulkUrlIngest}
           disabled={isGenerating || !urlList.trim()}
-          className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+          className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
         >
           {isGenerating ? (
             <><Loader className="w-4 h-4 animate-spin" /> Processing {progress.current} of {progress.total}...</>
           ) : (
-            <><Zap className="w-4 h-4 text-amber-300" /> Process URLs</>
+            <><Zap className="w-4 h-4 text-amber-300" /> Process URLs (Smart Duplicate Filter)</>
           )}
         </button>
       </div>
@@ -385,25 +390,25 @@ const AdminRecipeIngestor = ({ db, appId, effectiveUserId }) => {
             {pendingQueue.map((recipe, index) => (
               <div key={index} className="bg-gray-50 p-4 rounded-2xl border border-gray-200 flex flex-col gap-4">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                  <div className="space-y-1 flex-1 min-w-0">
-                    <span className="font-black text-sm text-gray-900 block truncate">{recipe.title}</span>
-                    <p className="text-[10px] text-gray-400 font-mono truncate">From: {recipe.sourceUrl}</p>
-                    {recipe.relatedLinks && recipe.relatedLinks.length > 0 && (
-                      <p className="text-[10px] text-indigo-500 font-bold truncate">
-                        Found {recipe.relatedLinks.length} related links on page!
-                      </p>
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    {recipe.image && (
+                      <img src={recipe.image} alt="" className="w-12 h-12 rounded-xl object-cover border border-gray-200 shrink-0" />
                     )}
+                    <div className="space-y-1 min-w-0">
+                      <span className="font-black text-sm text-gray-900 block truncate">{recipe.title}</span>
+                      <p className="text-[10px] text-gray-400 font-mono truncate">From: {recipe.sourceUrl}</p>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
                     <button
                       onClick={() => handlePublishRecipe(recipe, index)}
-                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold text-xs rounded-xl shadow-xs"
+                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer"
                     >
                       Publish
                     </button>
                     <button
                       onClick={() => setPendingQueue(prev => prev.filter((_, i) => i !== index))}
-                      className="px-4 py-2 bg-white border border-red-200 text-red-600 hover:bg-red-50 font-bold text-xs rounded-xl"
+                      className="px-4 py-2 bg-white border border-red-200 text-red-600 hover:bg-red-50 font-bold text-xs rounded-xl cursor-pointer"
                     >
                       Discard
                     </button>
@@ -3707,6 +3712,8 @@ const AdminDashboard = ({
   onPurge,
   onImpersonate,
   effectiveUserId,
+  communityRecipes,
+  setActiveTab,
 }) => {
   const [adminView, setAdminView] = useState("impact");
   const [feedbackLogs, setFeedbackLogs] = useState([]);
@@ -3755,7 +3762,7 @@ const AdminDashboard = ({
   return (
     <div className="space-y-6">
       {/* Render Admin Batch Recipe Ingestor Studio (#6) */}
-      <AdminRecipeIngestor db={db} appId={appId} effectiveUserId={effectiveUserId} />
+      <AdminRecipeIngestor db={db} appId={appId} effectiveUserId={effectiveUserId} communityRecipes={communityRecipes} setActiveTab={setActiveTab}/>
       <div className="bg-gray-900 text-white p-6 rounded-3xl shadow-xl">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold flex items-center gap-2">
@@ -4604,6 +4611,72 @@ const SoftGateModal = ({ isOpen, onClose, featureContext = "save recipes & sync 
         
         <div className="bg-gray-50 p-3 text-center border-t border-gray-100 text-[10px] text-gray-400">
           No credit card required • Free forever tier available
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// 👉 LANDMARK: Duplicate URL Resolution Modal for Regular Users
+const DuplicateUrlModal = ({ matchData, onClose, onViewExisting, onForceUpload }) => {
+  if (!matchData) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[80] flex items-center justify-center p-4 animate-in fade-in">
+      <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl space-y-4 animate-in slide-in-from-bottom">
+        <div className="flex justify-between items-center border-b pb-2">
+          <h3 className="font-black text-base text-gray-900 flex items-center gap-2">
+            <AlertCircle className="w-5 h-5 text-amber-500" /> Recipe Already Exists
+          </h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full cursor-pointer">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-xs text-gray-600 leading-relaxed">
+            This recipe URL is already in our community database:
+          </p>
+          <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 space-y-1">
+            <p className="text-xs font-bold text-gray-900 truncate">{matchData.title}</p>
+            <a 
+              href={matchData.sourceUrl} 
+              target="_blank" 
+              rel="noreferrer" 
+              className="text-[10px] text-blue-500 font-mono truncate block hover:underline"
+            >
+              {matchData.sourceUrl}
+            </a>
+          </div>
+        </div>
+
+        <div className="space-y-2 pt-2">
+          <button
+            onClick={() => {
+              onViewExisting(matchData);
+              onClose();
+            }}
+            className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm cursor-pointer transition-colors"
+          >
+            👀 View Existing Recipe
+          </button>
+          
+          <button
+            onClick={() => {
+              onForceUpload();
+              onClose();
+            }}
+            className="w-full py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-xs rounded-xl cursor-pointer transition-colors"
+          >
+            ➕ Upload New Version Anyway
+          </button>
+
+          <button
+            onClick={onClose}
+            className="w-full py-2 text-gray-400 hover:text-gray-600 text-xs font-bold cursor-pointer"
+          >
+            Close Completely
+          </button>
         </div>
       </div>
     </div>
@@ -5616,27 +5689,45 @@ const handleBulkAdd = async (e) => {
 
 
 // NEW: URL Recipe Ingestor Logic
-  const handleUrlIngest = async (e) => {
-    e.preventDefault();
+  // State to manage the duplicate prompt modal
+  const [duplicateMatch, setDuplicateMatch] = useState(null);
+  const [pendingDuplicateUrl, setPendingDuplicateUrl] = useState("");
+
+  const handleUrlIngest = async (e, forceUpload = false) => {
+    e?.preventDefault();
     if (!ingestUrl.trim()) return;
+
+    const targetUrl = ingestUrl.trim();
+
+    // 👉 Check if URL already exists in community recipes
+    if (!forceUpload) {
+      const existingMatch = communityRecipes.find(r => r.sourceUrl === targetUrl);
+      if (existingMatch) {
+        setDuplicateMatch(existingMatch);
+        setPendingDuplicateUrl(targetUrl);
+        return; // Halt execution, don't burn tokens
+      }
+    }
+
     setIsIngesting(true);
     setStatus("Reading webpage...");
 
-    const prompt = `Visit this URL: ${ingestUrl} and extract the recipe. 
-    Ignore all blog fluff, life stories, and ads. If it's a video, read the transcript/caption.
-    Return ONLY a valid JSON object strictly matching this schema:
+    const prompt = `Visit this URL: ${targetUrl} and extract the recipe. 
+    Format instructions clearly with numbered steps (e.g. "1. ... 2. ...").
+    Extract the primary recipe image URL into 'image'.
+    Ignore all blog fluff, life stories, and ads.
+    Return ONLY a valid JSON object matching this schema:
     {
       "title": "Recipe Name",
       "description": "Short description",
-      "prepTime": "e.g. 30 mins",
+      "prepTime": "30 mins",
       "servings": 4,
+      "image": "https://image-url.jpg",
       "allIngredients": [{"name": "item", "quantity": 1, "unit": "cup"}],
-      "instructions": "Step 1... Step 2...",
+      "instructions": "1. Step one...\n2. Step two...",
       "nutrition": {"calories": 0, "protein": "0g", "carbs": "0g", "fat": "0g"},
-      "recommendedGear": ["gear 1"],
-      "recommendedSides": ["side 1"],
-      "sourceName": "Name of Website/Creator",
-      "sourceUrl": "${ingestUrl}"
+      "sourceName": "Web Import",
+      "sourceUrl": "${targetUrl}"
     }`;
 
     const payload = {
@@ -5648,15 +5739,13 @@ const handleBulkAdd = async (e) => {
       const responseText = await apiCall(payload);
       const recipeData = parseAIResponse(responseText);
       
-      // Calculate match percentage against current pantry
       const processedRecipe = processRecipesAgainstInventory([recipeData])[0];
       
-      // Save directly to the community feed/database
       await addDoc(collection(db, `/artifacts/${appId}/public/data/userRecipes`), {
         ...processedRecipe,
         createdAt: serverTimestamp(),
         createdBy: effectiveUserId || "anonymous",
-        isAI: false, // Flagging as real external recipe
+        isAI: false,
         likeCount: 0,
         authorName: processedRecipe.sourceName || "Web Import",
         authorImage: userProfile?.image || null
@@ -5665,7 +5754,8 @@ const handleBulkAdd = async (e) => {
       setStatus("Recipe Imported!");
       setShowIngestModal(false);
       setIngestUrl("");
-      handleSetActiveRecipe(processedRecipe); // Open it immediately
+      setDuplicateMatch(null);
+      handleSetActiveRecipe(processedRecipe);
     } catch (err) {
       console.error(err);
       setStatus("Failed to read URL.");
@@ -7801,6 +7891,8 @@ const handleBulkAdd = async (e) => {
                 onPurge={purgeTestData}
                 onImpersonate={handleImpersonate}
                 effectiveUserId={effectiveUserId}
+                communityRecipes={communityRecipes}
+                setActiveTab={setActiveTab}
               />
             </div>
           </div>
@@ -8087,6 +8179,18 @@ const handleBulkAdd = async (e) => {
         isOpen={showSoftGate}
         onClose={() => setShowSoftGate(false)}
         featureContext={softGateContext}
+      />
+
+      <DuplicateUrlModal
+        matchData={duplicateMatch}
+        onClose={() => setDuplicateMatch(null)}
+        onViewExisting={(recipe) => {
+          setShowIngestModal(false);
+          handleSetActiveRecipe(recipe);
+        }}
+        onForceUpload={() => {
+          handleUrlIngest(null, true); // Forces upload, bypassing duplicate check
+        }}
       />
 
       <style
