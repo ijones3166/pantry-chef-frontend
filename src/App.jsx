@@ -8077,7 +8077,7 @@ const handleBulkAdd = async (e) => {
       </nav>
 
       {/* Mobile Bottom Navigation (Hidden on desktop/tablet) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-gray-200 z-30 shadow-up py-3 relative">
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-gray-200 z-30 shadow-up py-3">
         <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-white via-white/90 to-transparent pointer-events-none z-20 flex items-center justify-end pr-1">
           <div className="w-1 h-6 bg-indigo-500/30 rounded-full blur-[1px] animate-pulse" />
         </div>
