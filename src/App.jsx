@@ -187,6 +187,272 @@ const incrementApiUsage = () => {
   return current + 1;
 };
 
+// 👉 LANDMARK: Admin Usage Telemetry Logger Utility
+const logAdminApiUsage = async (db, appId, effectiveUserId, requestCount = 1) => {
+  if (!db) return;
+  const todayKey = new Date().toISOString().split('T')[0];
+  const usageRef = doc(db, `/artifacts/${appId}/public/data/adminUsage`, todayKey);
+  
+  try {
+    await setDoc(usageRef, {
+      totalRequests: increment(requestCount),
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
+  } catch (e) {
+    console.error("Failed to sync usage stats:", e);
+  }
+};
+
+// Admin Batch Recipe Ingestor & Review Studio (#6 / Batch Ingest)
+// 👉 LANDMARK: Global 3-Tier Ingredient Taxonomy Master List
+const INGREDIENT_TAXONOMY = {
+  "Produce": {
+    "Aromatics": ["Garlic (Fresh)", "Yellow Onion", "Red Onion", "Shallots", "Ginger"],
+    "Herbs": ["Basil", "Cilantro", "Parsley", "Thyme", "Rosemary"],
+    "Citrus": ["Lemons", "Limes", "Oranges"],
+    "Peppers": ["Jalapeños", "Bell Peppers", "Serrano"]
+  },
+  "Protein": {
+    "Beef": ["Ground Beef (80/20)", "Ground Beef (90/10)", "Ribeye Steak", "Chuck Roast", "Flank Steak"],
+    "Chicken": ["Whole Chicken", "Chicken Breast", "Chicken Thighs", "Chicken Wings"],
+    "Pork": ["Pork Chops", "Bacon", "Pancetta", "Italian Sausage"],
+    "Seafood": ["Shrimp", "Salmon Fillet", "Whitefish"]
+  },
+  "Dairy": {
+    "Cheese": ["Parmesan Block", "Mozzarella", "Cheddar", "Feta"],
+    "Liquid Dairy": ["Whole Milk", "Heavy Cream", "Buttermilk"],
+    "Butter & Eggs": ["Salted Butter", "Unsalted Butter", "Eggs"]
+  },
+  "Grains": {
+    "Pasta": ["Spaghetti", "Penne", "Fettuccine", "Macaroni"],
+    "Rice": ["Jasmine Rice", "Basmati Rice", "Arborio Rice", "Brown Rice"],
+    "Baking": ["All-Purpose Flour", "Bread Crumbs", "Masa Harina"]
+  },
+  "Spices & Oils": {
+    "Oils": ["Extra Virgin Olive Oil", "Vegetable Oil", "Toasted Sesame Oil", "Avocado Oil"],
+    "Vinegars": ["Balsamic Vinegar", "Apple Cider Vinegar", "Rice Vinegar"],
+    "Dry Spices": ["Black Pepper", "Garlic Powder", "Onion Powder", "Dried Oregano"]
+  }
+};
+
+// 👉 LANDMARK: Admin Bulk URL Recipe Ingestor
+const AdminRecipeIngestor = ({ db, appId, effectiveUserId }) => {
+  const [urlList, setUrlList] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [pendingQueue, setPendingQueue] = useState([]);
+  const [dailyUsageCount, setDailyUsageCount] = useState(0);
+  const [progress, setProgress] = useState({ current: 0, total: 0 });
+
+  // Fetch today's global usage telemetry
+  useEffect(() => {
+    if (!db) return;
+    const todayKey = new Date().toISOString().split('T')[0];
+    const unsub = onSnapshot(doc(db, `/artifacts/${appId}/public/data/adminUsage`, todayKey), (docSnap) => {
+      if (docSnap.exists()) setDailyUsageCount(docSnap.data().totalRequests || 0);
+    });
+    return () => unsub();
+  }, [db, appId]);
+
+  const handleBulkUrlIngest = async () => {
+    const urls = urlList.split('\n').map(u => u.trim()).filter(u => u.startsWith('http'));
+    if (urls.length === 0) return alert("Please paste at least one valid URL.");
+    
+    setIsGenerating(true);
+    setProgress({ current: 0, total: urls.length });
+
+    for (let i = 0; i < urls.length; i++) {
+      setProgress({ current: i + 1, total: urls.length });
+      const currentUrl = urls[i];
+
+      try {
+        // 1. Fetch the raw HTML using a public CORS proxy so the browser doesn't block it
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(currentUrl)}`;
+        const htmlRes = await fetch(proxyUrl);
+        const htmlData = await htmlRes.json();
+        let rawText = htmlData.contents || "";
+
+        // 2. Strip HTML tags to save tokens and give Gemini clean text
+        rawText = rawText.replace(/<[^>]*>?/gm, ' ').replace(/\s+/g, ' ').substring(0, 15000);
+
+        // 3. Feed the actual text of the webpage to the AI
+        const prompt = `Extract the recipe from this webpage text. 
+        If there are other recipe links or titles mentioned on the page, list them in relatedLinks.
+        
+        Webpage Text: "${rawText}"
+        
+        Return ONLY a valid JSON object matching this schema:
+        {
+          "title": "Recipe Name",
+          "description": "Appetizing summary",
+          "prepTime": "30 mins",
+          "servings": 4,
+          "allIngredients": [{"name": "ingredient name", "quantity": 1, "unit": "cup"}],
+          "instructions": "Step 1... Step 2...",
+          "sourceName": "Web Extractor",
+          "sourceUrl": "${currentUrl}",
+          "nutrition": {"calories": 450, "protein": "25g", "carbs": "40g", "fat": "15g"},
+          "recommendedGear": [],
+          "relatedLinks": ["List any other recipe titles or URLs mentioned on the page"]
+        }`;
+
+        const payload = {
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { responseMimeType: "application/json" }
+        };
+
+        const responseText = await apiCall(payload);
+        const newRecipe = parseAIResponse(responseText);
+
+        setPendingQueue((prev) => [...prev, newRecipe]);
+
+        // Respect Free Tier RPM Limits: Wait 4.5 seconds between each call
+        if (i < urls.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 4500));
+        }
+
+      } catch (err) {
+        console.error(`Failed on URL: ${currentUrl}`, err);
+      }
+    }
+    
+    setIsGenerating(false);
+    setUrlList(""); // Clear list on finish
+  };
+
+  const handlePublishRecipe = async (recipe, index) => {
+    try {
+      await addDoc(collection(db, `/artifacts/${appId}/public/data/userRecipes`), {
+        ...recipe,
+        createdAt: serverTimestamp(),
+        createdBy: effectiveUserId || "admin_batch",
+        likeCount: 0,
+        isAI: false,
+        authorName: recipe.sourceName || "Curated Chef"
+      });
+      setPendingQueue((prev) => prev.filter((_, i) => i !== index));
+    } catch (e) {
+      console.error("Publish error:", e);
+    }
+  };
+
+  return (
+    <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-6">
+      <div className="flex justify-between items-center border-b pb-4">
+        <div>
+          <h3 className="font-black text-gray-900 text-base">Bulk URL Recipe Ingestor</h3>
+          <p className="text-xs text-gray-500">Paste multiple URLs to extract recipes and burn daily quota.</p>
+        </div>
+        <div className="bg-indigo-50 border border-indigo-100 px-3 py-1.5 rounded-2xl text-right">
+          <p className="text-[9px] font-bold text-indigo-400 uppercase">Global AI Usage</p>
+          <p className="text-sm font-black text-indigo-700">{dailyUsageCount} Requests</p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <label className="block text-[10px] font-bold text-gray-400 uppercase">Paste URLs (One per line)</label>
+        <textarea
+          value={urlList}
+          onChange={(e) => setUrlList(e.target.value)}
+          placeholder="https://example.com/recipe-1&#10;https://example.com/recipe-2"
+          className="w-full h-32 p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono outline-none focus:border-indigo-500 resize-none"
+          disabled={isGenerating}
+        />
+        <button
+          onClick={handleBulkUrlIngest}
+          disabled={isGenerating || !urlList.trim()}
+          className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          {isGenerating ? (
+            <><Loader className="w-4 h-4 animate-spin" /> Processing {progress.current} of {progress.total}...</>
+          ) : (
+            <><Zap className="w-4 h-4 text-amber-300" /> Process URLs</>
+          )}
+        </button>
+      </div>
+
+      {/* Staging Review Queue */}
+      <div className="space-y-3 pt-4 border-t">
+        <h4 className="font-bold text-xs text-gray-700 uppercase tracking-wider">
+          Review Queue ({pendingQueue.length} Pending)
+        </h4>
+
+        {pendingQueue.length === 0 ? (
+          <div className="p-8 text-center bg-gray-50 border border-dashed border-gray-200 rounded-2xl text-xs text-gray-400">
+            Queue is empty. Paste URLs above to start processing.
+          </div>
+        ) : (
+          <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+            {pendingQueue.map((recipe, index) => (
+              <div key={index} className="bg-gray-50 p-4 rounded-2xl border border-gray-200 flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                  <div className="space-y-1 flex-1 min-w-0">
+                    <span className="font-black text-sm text-gray-900 block truncate">{recipe.title}</span>
+                    <p className="text-[10px] text-gray-400 font-mono truncate">From: {recipe.sourceUrl}</p>
+                    {recipe.relatedLinks && recipe.relatedLinks.length > 0 && (
+                      <p className="text-[10px] text-indigo-500 font-bold truncate">
+                        Found {recipe.relatedLinks.length} related links on page!
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button
+                      onClick={() => handlePublishRecipe(recipe, index)}
+                      className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-bold text-xs rounded-xl shadow-xs"
+                    >
+                      Publish
+                    </button>
+                    <button
+                      onClick={() => setPendingQueue(prev => prev.filter((_, i) => i !== index))}
+                      className="px-4 py-2 bg-white border border-red-200 text-red-600 hover:bg-red-50 font-bold text-xs rounded-xl"
+                    >
+                      Discard
+                    </button>
+                  </div>
+                </div>
+
+                {/* 3-Tier Tagger */}
+                <div className="space-y-2 pt-3 border-t border-gray-200">
+                  {recipe.allIngredients?.map((ing, ingIdx) => {
+                    const tier1 = ing.tier1 || Object.keys(INGREDIENT_TAXONOMY)[0];
+                    const tier2Options = INGREDIENT_TAXONOMY[tier1] ? Object.keys(INGREDIENT_TAXONOMY[tier1]) : [];
+                    const tier2 = ing.tier2 || tier2Options[0] || "";
+                    const tier3Options = INGREDIENT_TAXONOMY[tier1]?.[tier2] || [];
+                    const tier3 = ing.tier3 || tier3Options[0] || "";
+
+                    return (
+                      <div key={ingIdx} className="bg-white p-2 rounded-lg border border-gray-200 flex items-center gap-2">
+                        <span className="text-xs font-bold text-gray-800 w-24 truncate">{ing.name}</span>
+                        <select value={tier1} onChange={(e) => {
+                          const newT1 = e.target.value; const newT2 = Object.keys(INGREDIENT_TAXONOMY[newT1])[0]; const newT3 = INGREDIENT_TAXONOMY[newT1][newT2][0];
+                          setPendingQueue(prev => { const updated = [...prev]; updated[index].allIngredients[ingIdx] = { ...ing, tier1: newT1, tier2: newT2, tier3: newT3, name: `${newT1} > ${newT2} > ${newT3}` }; return updated; });
+                        }} className="text-[10px] p-1 bg-gray-50 border rounded outline-none flex-1">
+                          {Object.keys(INGREDIENT_TAXONOMY).map(t1 => <option key={t1} value={t1}>{t1}</option>)}
+                        </select>
+                        <select value={tier2} onChange={(e) => {
+                          const newT2 = e.target.value; const newT3 = INGREDIENT_TAXONOMY[tier1][newT2][0];
+                          setPendingQueue(prev => { const updated = [...prev]; updated[index].allIngredients[ingIdx] = { ...ing, tier2: newT2, tier3: newT3, name: `${tier1} > ${newT2} > ${newT3}` }; return updated; });
+                        }} className="text-[10px] p-1 bg-gray-50 border rounded outline-none flex-1">
+                          {tier2Options.map(t2 => <option key={t2} value={t2}>{t2}</option>)}
+                        </select>
+                        <select value={tier3} onChange={(e) => {
+                          const newT3 = e.target.value;
+                          setPendingQueue(prev => { const updated = [...prev]; updated[index].allIngredients[ingIdx] = { ...ing, tier3: newT3, name: `${tier1} > ${tier2} > ${newT3}` }; return updated; });
+                        }} className="text-[10px] p-1 bg-gray-50 border rounded outline-none flex-1">
+                          {tier3Options.map(t3 => <option key={t3} value={t3}>{t3}</option>)}
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const fileToBase64 = (file) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -299,12 +565,12 @@ const getApiKey = () =>
 
 // --- UPDATED SERVICES (Backend Proxy Route) ---
 const apiCall = async (payload, retries = 3) => {
+  // Local safety check
   const currentUsage = getApiUsage();
   if (currentUsage >= DAILY_API_LIMIT) {
     throw new Error(`Daily limit reached (${DAILY_API_LIMIT}). Try again tomorrow.`);
   }
 
-  // Pointing to your LIVE Render backend
   const apiUrl = `https://pantry-chef-proxy.onrender.com/api/generate`;
   
   try {
@@ -314,9 +580,7 @@ const apiCall = async (payload, retries = 3) => {
       body: JSON.stringify(payload),
     });
 
-    // Handle temporary server spikes (503)
     if (response.status === 503 && retries > 0) {
-        console.warn(`Server busy, retrying in 2s... (${retries} attempts left)`);
         await new Promise(resolve => setTimeout(resolve, 2000));
         return apiCall(payload, retries - 1);
     }
@@ -324,9 +588,16 @@ const apiCall = async (payload, retries = 3) => {
     const result = await response.json();
     if (result.error) throw new Error(result.error.message);
     
+    // 1. Increment local safety counter
     incrementApiUsage();
+    
+    // 2. 👉 INCREMENT GLOBAL FIRESTORE COUNTER FOR ADMIN VIEW
+    if (db) {
+      logAdminApiUsage(db, appId, "system_user", 1);
+    }
+
     if (!result.candidates?.[0]?.content?.parts?.[0]?.text) {
-      throw new Error("AI returned no content. Try again.");
+      throw new Error("AI returned no content.");
     }
     return result.candidates[0].content.parts[0].text;
   } catch (err) {
@@ -463,17 +734,31 @@ const fetchAIRecipes = async (
   const equipText = profile.equipment?.length
     ? `Equip: ${profile.equipment.join(", ")}.`
     : "";
+  const healthGoalsText = profile.healthGoals?.length 
+    ? `Health Goals/Medical Constraints: ${profile.healthGoals.join(", ")}.` 
+    : "";
+  const dislikedText = profile.dislikedFoods 
+    ? `Strictly AVOID these disliked ingredients/allergens: ${profile.dislikedFoods}.` 
+    : "";
+  const kidPrefText = profile.kidPreferences 
+    ? `Household/Kid Preferences: ${profile.kidPreferences}.` 
+    : "";
+  const householdText = profile.householdSize 
+    ? `Cooking for household size: ${profile.householdSize}.` 
+    : "";
   let filterContext = "";
   if (filters.proteins?.length)
     filterContext += `Must include one of: ${filters.proteins.join(", ")}. `;
   if (filters.vegetables?.length)
     filterContext += `Must include one of: ${filters.vegetables.join(", ")}. `;
   if (filters.cuisine) filterContext += `Cuisine style: ${filters.cuisine}. `;
+  // Combine them into the AI system/user prompt string:
+  let prompt = `Ingredients available: ${itemsList}. ${householdText} ${healthGoalsText} ${dislikedText} ${kidPrefText} ${dietText} ${equipText} ${filterContext} ...`;
+  "";
   if (filters.maxTime)
     filterContext += `Max cooking time: ${filters.maxTime}. `;
   if (filters.familyMode)
     filterContext += `FAMILY MODE ACTIVE: Suggest meals with a kid-friendly adaptation using the same base ingredients. `;
-  let prompt = "";
   if (queryText) {
     prompt = `Search for recipes matching "${queryText}". ${filterContext} ${dietText}. User has: ${itemsList}. Try to find recipes that use these items if possible. Return 3 results. Output JSON array. Each object: title, description, prepTime, servings (int), matchPercentage (number), sourceName, sourceUrl, missingIngredients (array), allIngredients (array of name, quantity, unit), instructions, kidFriendlyVersion (string), nutrition (object with calories (int), protein (string), carbs (string), fat (string)), recommendedGear (array of string for suggested utensils/appliances), recommendedSides (array of string).`;
   } else if (mode === "meal") {
@@ -936,6 +1221,7 @@ const MOCK_PERSONAS = [
 ];
 
 // --- COMPONENTS ---
+
 
 // --- Pantry Valuation Card ---
 const PantryValuationCard = ({ inventory }) => {
@@ -3420,6 +3706,7 @@ const AdminDashboard = ({
   onSeed,
   onPurge,
   onImpersonate,
+  effectiveUserId,
 }) => {
   const [adminView, setAdminView] = useState("impact");
   const [feedbackLogs, setFeedbackLogs] = useState([]);
@@ -3467,6 +3754,8 @@ const AdminDashboard = ({
 
   return (
     <div className="space-y-6">
+      {/* Render Admin Batch Recipe Ingestor Studio (#6) */}
+      <AdminRecipeIngestor db={db} appId={appId} effectiveUserId={effectiveUserId} />
       <div className="bg-gray-900 text-white p-6 rounded-3xl shadow-xl">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-bold flex items-center gap-2">
@@ -3675,6 +3964,18 @@ const AdminDashboard = ({
 };
 
 // Re-implementing ToolsScreen
+const ToolsView = () => {
+  return (
+    <div className="space-y-6 max-w-4xl mx-auto p-2 md:p-6 animate-in fade-in">
+      <div className="flex items-center gap-2 mb-2">
+        <BookOpen className="w-6 h-6 text-indigo-600" />
+        <h2 className="text-xl font-black text-gray-900">Culinary Tools & Cheat Sheets</h2>
+      </div>
+      <ConverterWidget />
+      <KitchenGuide />
+    </div>
+  );
+};
 const ToolsScreen = ({
   profile,
   onSaveProfile,
@@ -3682,9 +3983,10 @@ const ToolsScreen = ({
   onToggleAdmin,
   isDemoAuthenticated,
   onShowLogin,
-  initialSubTab = "converter",
+  onRestartTour,
+  defaultTab = "tools"
 }) => {
-  const [subTab, setSubTab] = useState(initialSubTab);
+  const [subTab, setSubTab] = useState(defaultTab);
   const [profileImage, setProfileImage] = useState(profile.image || null);
   const [dataSyncId, setDataSyncId] = useState(
     localStorage.getItem("pantry_chef_custom_id") || ""
@@ -3708,41 +4010,18 @@ const ToolsScreen = ({
   };
 
   const diets = [
-    "Vegetarian",
-    "Vegan",
-    "Gluten-Free",
-    "Keto",
-    "Paleo",
-    "Nut-Free",
-    "Dairy-Free",
-    "Shellfish-Free",
-    "Egg-Free",
-    "Kosher",
-    "Halal",
+    "Vegetarian", "Vegan", "Gluten-Free", "Keto", "Paleo",
+    "Nut-Free", "Dairy-Free", "Shellfish-Free", "Egg-Free", "Kosher", "Halal",
   ];
   const defaultEquipment = [
-    "Air Fryer",
-    "Blender",
-    "Slow Cooker",
-    "Instant Pot",
-    "Food Processor",
-    "Wok",
-    "Stand Mixer",
-    "Dutch Oven",
-    "Cast Iron Skillet",
-    "Rice Cooker",
-    "Sous Vide",
-    "Grill",
-    "Smoker",
-    "Microwave",
-    "Toaster",
-    "Immersion Blender",
-    "Mandoline",
-    "Pizza Stone",
+    "Air Fryer", "Blender", "Slow Cooker", "Instant Pot", "Food Processor",
+    "Wok", "Stand Mixer", "Dutch Oven", "Cast Iron Skillet", "Rice Cooker",
+    "Sous Vide", "Grill", "Smoker", "Microwave", "Toaster", "Immersion Blender", "Mandoline", "Pizza Stone",
   ];
   const displayEquipment = Array.from(
     new Set([...defaultEquipment, ...(localProfile.equipment || [])])
   );
+
   const toggleItem = (cat, item) => {
     const cur = localProfile[cat] || [];
     setLocalProfile({
@@ -3752,6 +4031,7 @@ const ToolsScreen = ({
         : [...cur, item],
     });
   };
+
   const handleProfileImageSelect = async (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -3760,44 +4040,30 @@ const ToolsScreen = ({
       setLocalProfile({ ...localProfile, image: resized });
     }
   };
-  const badgeCount = Object.keys(profile.challenges || {}).filter(
-    (k) => profile.challenges[k] >= CHALLENGES.find((c) => c.id === k).target
-  ).length;
+
+
+const handleProtectedPreferenceChange = (contextLabel, callback) => {
+    if (!isDemoAuthenticated) {
+      setSoftGateContext(contextLabel);
+      setShowSoftGate(true);
+      return;
+    }
+    callback();
+  };
   const handleSyncIdChange = (e) => {
     const newVal = e.target.value;
     setDataSyncId(newVal);
     localStorage.setItem("pantry_chef_custom_id", newVal);
   };
 
+  const badgeCount = Object.keys(profile?.challenges || {}).filter(
+    (k) => profile?.challenges?.[k] >= CHALLENGES.find((c) => c.id === k)?.target
+  ).length;
+
   return (
-    <div className="space-y-6">
-      <div className="flex bg-gray-200 p-1 rounded-xl">
-        <button
-          onClick={() => setSubTab("converter")}
-          className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
-            subTab === "converter"
-              ? "bg-white shadow text-indigo-600"
-              : "text-gray-500 cursor-pointer"
-          }`}
-        >
-          Calculator
-        </button>
-        <button
-          onClick={() => setSubTab("profile")}
-          className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all ${
-            subTab === "profile"
-              ? "bg-white shadow text-indigo-600"
-              : "text-gray-500 cursor-pointer"
-          }`}
-        >
-          My Settings
-        </button>
-      </div>
-      {subTab === "converter" ? (
-        <ConverterWidget />
-      ) : (
-        <div className="space-y-6">
-          {/* LOGIN CARD - Shows only if not logged in */}
+    <div className="space-y-6 animate-in fade-in">
+      <div className="space-y-6 animate-in fade-in">
+          {/* 1. Login Banner */}
           {!isDemoAuthenticated && (
             <div className="bg-indigo-600 p-6 rounded-3xl shadow-lg text-center text-white">
               <ChefHat className="w-12 h-12 mx-auto mb-3 text-white/90" />
@@ -3814,25 +4080,15 @@ const ToolsScreen = ({
             </div>
           )}
 
-          {/* PROFILE CARD - Locked state or Open state */}
-          <div
-            className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 text-center ${
-              !isDemoAuthenticated
-                ? "opacity-50 pointer-events-none filter blur-sm select-none"
-                : ""
-            }`}
-          >
+          {/* 2. My Profile & Avatar */}
+          <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 text-center ${!isDemoAuthenticated ? "opacity-50 pointer-events-none filter blur-sm select-none" : ""}`}>
             <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2 justify-center">
-              <UserCircle className="w-5 h-5 text-indigo-600" /> My Profile
+              <UserCircle className="w-5 h-5 text-indigo-600" /> My Profile & Preferences
             </h3>
             <label className="cursor-pointer inline-block relative">
-              <div className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden border-2 border-dashed border-gray-300">
+              <div className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden border-2 border-dashed border-gray-300 mx-auto">
                 {profileImage ? (
-                  <img
-                    src={profileImage}
-                    alt="Me"
-                    className="w-full h-full object-cover"
-                  />
+                  <img src={profileImage} alt="Me" className="w-full h-full object-cover" />
                 ) : (
                   <Scan className="w-8 h-8 text-gray-400" />
                 )}
@@ -3840,17 +4096,8 @@ const ToolsScreen = ({
               <div className="absolute bottom-0 right-0 bg-indigo-600 p-2 rounded-full text-white">
                 <Plus className="w-3 h-3" />
               </div>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handleProfileImageSelect}
-                className="hidden"
-                disabled={!isDemoAuthenticated}
-              />
+              <input type="file" accept="image/*" onChange={handleProfileImageSelect} className="hidden" disabled={!isDemoAuthenticated} />
             </label>
-            <p className="text-xs text-gray-400 mt-2">
-              Upload a photo to be identified in the community feed.
-            </p>
             <div className="text-left mt-6 pt-4 border-t border-gray-100">
               <label className="text-xs font-bold text-gray-500 mb-1 flex items-center gap-1">
                 <MapPin className="w-3 h-3" /> Zip Code
@@ -3860,18 +4107,14 @@ const ToolsScreen = ({
                 placeholder="e.g. 90210"
                 className="w-full p-3 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-indigo-600 transition-all"
                 value={localProfile.zipCode || ""}
-                onChange={(e) =>
-                  setLocalProfile({ ...localProfile, zipCode: e.target.value })
-                }
+                onChange={(e) => setLocalProfile({ ...localProfile, zipCode: e.target.value })}
                 maxLength={5}
                 disabled={!isDemoAuthenticated}
               />
-              <p className="text-[10px] text-gray-400 mt-1">
-                Required for local deal hunting and community features.
-              </p>
             </div>
           </div>
-
+          
+          {/* 3. AI Usage */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
             <h3 className="font-bold text-gray-900 mb-2 flex items-center gap-2">
               <Battery className="w-5 h-5 text-green-500" /> AI Usage Today
@@ -3882,22 +4125,13 @@ const ToolsScreen = ({
             </div>
             <div className="w-full bg-gray-100 rounded-full h-3">
               <div
-                className={`h-3 rounded-full transition-all duration-500 ${
-                  apiUsage >= DAILY_API_LIMIT ? "bg-red-500" : "bg-green-500"
-                }`}
-                style={{
-                  width: `${Math.min(
-                    (apiUsage / DAILY_API_LIMIT) * 100,
-                    100
-                  )}%`,
-                }}
+                className="h-3 rounded-full bg-green-500 transition-all duration-500"
+                style={{ width: `${Math.min((apiUsage / DAILY_API_LIMIT) * 100, 100)}%` }}
               ></div>
             </div>
-            <p className="text-[10px] text-gray-400 mt-2">
-              Refreshes daily. Add your own key below for unlimited access.
-            </p>
           </div>
 
+          {/* 4. Creator Progress */}
           {profile.creatorProgress > 0 && (
             <div className="bg-yellow-50 p-6 rounded-3xl border border-yellow-200 shadow-sm relative overflow-hidden">
               <div className="absolute -right-4 -top-4 text-yellow-100">
@@ -3909,9 +4143,7 @@ const ToolsScreen = ({
                 </h3>
                 {profile.creatorProgress >= 100 ? (
                   <div>
-                    <p className="text-xs font-bold text-yellow-700 mb-2">
-                      You are a Verified Pro Chef!
-                    </p>
+                    <p className="text-xs font-bold text-yellow-700 mb-2">You are a Verified Pro Chef!</p>
                     <button className="w-full py-2 bg-white text-yellow-700 text-xs font-bold rounded-lg border border-yellow-200 shadow-sm cursor-pointer">
                       Manage Affiliate Links
                     </button>
@@ -3923,133 +4155,28 @@ const ToolsScreen = ({
                       <span>{profile.creatorProgress}%</span>
                     </div>
                     <div className="w-full bg-yellow-200 rounded-full h-2 mb-2">
-                      <div
-                        className="bg-yellow-500 h-2 rounded-full"
-                        style={{ width: `${profile.creatorProgress}%` }}
-                      ></div>
+                      <div className="bg-yellow-500 h-2 rounded-full" style={{ width: `${profile.creatorProgress}%` }}></div>
                     </div>
-                    <p className="text-[10px] text-yellow-600">
-                      Post 3 more recipes to level up.
-                    </p>
                   </div>
                 )}
               </div>
             </div>
           )}
 
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <Trophy className="w-5 h-5 text-indigo-600" /> Trophy Case (
-              {badgeCount})
-            </h3>
-            <div className="flex overflow-x-auto gap-3 pb-2 -mx-2 px-2 scrollbar-hide snap-x">
-              {CHALLENGES.map((c) => {
-                const current = (profile.challenges || {})[c.id] || 0;
-                const percent = Math.min((current / c.target) * 100, 100);
-                const isUnlocked = percent >= 100;
-                return (
-                  <div
-                    key={c.id}
-                    className="min-w-[120px] snap-center bg-gray-50 p-3 rounded-2xl border border-gray-100 flex flex-col items-center text-center"
-                  >
-                    <div
-                      className={`p-3 rounded-full mb-2 ${
-                        isUnlocked
-                          ? "bg-indigo-100 text-indigo-600 shadow-sm"
-                          : "bg-gray-200 text-gray-400"
-                      }`}
-                    >
-                      {c.icon}
-                    </div>
-                    <h4 className="font-bold text-xs text-gray-800 mb-1 leading-tight">
-                      {c.title}
-                    </h4>
-                    <p className="text-[9px] text-gray-400 mb-2 line-clamp-1">
-                      {c.desc}
-                    </p>
-                    <div className="w-full bg-gray-200 rounded-full h-1.5 mb-1">
-                      <div
-                        className={`h-1.5 rounded-full transition-all duration-1000 ${
-                          isUnlocked ? "bg-indigo-500" : "bg-gray-400"
-                        }`}
-                        style={{ width: `${percent}%` }}
-                      ></div>
-                    </div>
-                    <span className="text-[9px] font-mono text-gray-500">
-                      {current}/{c.target}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
 
-          <KitchenGuide />
-
+          {/* 5. Simulate Notifications */}
           <div className="bg-gray-900 p-4 rounded-3xl shadow-sm border border-gray-800">
             <h3 className="font-bold text-white text-sm mb-3 flex items-center gap-2">
-              <Bell className="w-4 h-4 text-indigo-400" /> Simulate
-              Notifications (Pitch Mode)
+              <Bell className="w-4 h-4 text-indigo-400" /> Simulate Notifications (Pitch Mode)
             </h3>
             <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() =>
-                  triggerSystemNotification(
-                    "⚠️ Expiring Soon",
-                    "Your Spinach and Milk are expiring in 2 days! Click to see recipes."
-                  )
-                }
-                className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left cursor-pointer"
-              >
-                Freshness Alert
-              </button>
-              <button
-                onClick={() =>
-                  triggerSystemNotification(
-                    "💰 Budget Goal Met",
-                    "Great job! You stayed under $150 this week."
-                  )
-                }
-                className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left cursor-pointer"
-              >
-                Budget Success
-              </button>
-              <button
-                onClick={() =>
-                  triggerSystemNotification(
-                    "❄️ Defrost Alert",
-                    "Heads up! Tomorrow's meal needs 'Chicken'. Move it from Freezer to Fridge tonight."
-                  )
-                }
-                className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left border-l-2 border-blue-400 cursor-pointer"
-              >
-                Defrost Reminder
-              </button>
-              <button
-                onClick={() =>
-                  triggerSystemNotification(
-                    "🍳 Dinner Time",
-                    "It's 5:30 PM. You have ingredients for 'Spicy Tacos'. Start cooking?"
-                  )
-                }
-                className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left cursor-pointer"
-              >
-                Meal Context
-              </button>
-              <button
-                onClick={() =>
-                  triggerSystemNotification(
-                    "🏷️ Price Drop",
-                    "Your favorite 'Olive Oil' is 20% off at Walmart today."
-                  )
-                }
-                className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left cursor-pointer"
-              >
-                Deal Hunter
-              </button>
+              <button onClick={() => triggerSystemNotification("⚠️ Expiring Soon", "Your Spinach and Milk are expiring in 2 days!")} className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left cursor-pointer">Freshness Alert</button>
+              <button onClick={() => triggerSystemNotification("💰 Budget Goal Met", "Great job! You stayed under $150 this week.")} className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left cursor-pointer">Budget Success</button>
+              <button onClick={() => triggerSystemNotification("❄️ Defrost Alert", "Move Chicken from Freezer to Fridge tonight.")} className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left border-l-2 border-blue-400 cursor-pointer">Defrost Reminder</button>
             </div>
           </div>
 
+          {/* 6. Data Sync ID */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
             <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
               <Plus className="w-5 h-5 text-indigo-600" /> Data Sync ID
@@ -4061,114 +4188,176 @@ const ToolsScreen = ({
               value={dataSyncId}
               onChange={handleSyncIdChange}
             />
-            <p className="text-[10px] text-gray-400 mt-2">
-              Use this ID to access your pantry from other devices. If blank,
-              data is lost on cache clear.
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="mt-2 w-full py-2 bg-gray-100 text-gray-600 rounded-lg text-xs font-bold cursor-pointer"
-            >
+            <button onClick={() => window.location.reload()} className="mt-2 w-full py-2 bg-gray-100 text-gray-600 rounded-lg text-xs font-bold cursor-pointer">
               Apply & Reload App
             </button>
           </div>
+
+          {/* 7. Manual Onboarding Test Trigger in Settings */}
+          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex justify-between items-center">
+            <div>
+              <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                <ChefHat className="w-5 h-5 text-indigo-600" /> Onboarding Walkthrough
+              </h3>
+              <p className="text-xs text-gray-500">Review the step-by-step introduction and starter staples.</p>
+            </div>
+            <button
+              onClick={onRestartTour}
+              className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-bold hover:bg-indigo-100 cursor-pointer"
+            >
+              Restart Tour
+            </button>
+          </div>
+
+          {/* 8. Go Pro */}
           <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-4 rounded-3xl shadow-lg text-white">
             <div className="flex justify-between items-center mb-2">
-              <h3 className="font-bold flex items-center gap-2">
-                <Crown className="w-5 h-5 text-yellow-300" /> Go Pro
-              </h3>
-              <span className="bg-white/20 px-2 py-1 rounded text-[10px] font-bold">
-                BEST VALUE
-              </span>
+              <h3 className="font-bold flex items-center gap-2"><Crown className="w-5 h-5 text-yellow-300" /> Go Pro</h3>
+              <span className="bg-white/20 px-2 py-1 rounded text-[10px] font-bold">BEST VALUE</span>
             </div>
-            <p className="text-xs text-indigo-100 mb-4">
-              Unlock unlimited AI recipes, advanced receipt scanning, and deal
-              hunting.
-            </p>
-            <button
-              onClick={() =>
-                window.dispatchEvent(new CustomEvent("openSubscription"))
-              }
-              className="w-full py-2 bg-white text-indigo-600 rounded-xl text-xs font-bold shadow-sm cursor-pointer"
-            >
+            <button onClick={() => window.dispatchEvent(new CustomEvent("openSubscription"))} className="w-full py-2 bg-white text-indigo-600 rounded-xl text-xs font-bold shadow-sm cursor-pointer">
               Upgrade Now
             </button>
           </div>
+
+          {/* 9. API Configuration */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
             <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <ConfigIcon className="w-5 h-5 text-indigo-600" /> API
-              Configuration
+              <ConfigIcon className="w-5 h-5 text-indigo-600" /> API Configuration
             </h3>
             <input
               type="password"
               placeholder="Paste Gemini API Key here..."
               className="w-full p-3 bg-gray-50 rounded-xl text-xs outline-none border border-gray-200 focus:border-indigo-600"
-              onChange={(e) =>
-                localStorage.setItem("gemini_api_key", e.target.value)
-              }
+              onChange={(e) => localStorage.setItem("gemini_api_key", e.target.value)}
               defaultValue={localStorage.getItem("gemini_api_key") || ""}
             />
-            <p className="text-[10px] text-gray-400 mt-2">
-              Overrides the default key. Useful if you hit quota limits.
-            </p>
           </div>
-          <div className="bg-gray-900 p-4 rounded-3xl shadow-sm border border-gray-800 flex justify-between items-center">
+
+          {/* 10. Admin Portal Toggle */}
+          <div className="bg-gray-900 p-4 rounded-3xl shadow-sm border border-gray-800 flex justify-between items-center text-white">
             <div>
-              <h3 className="font-bold text-white text-sm flex items-center gap-2">
-                <Briefcase className="w-4 h-4 text-indigo-400" /> Admin Portal
-                (Demo)
-              </h3>
-              <p className="text-[10px] text-gray-400">
-                View network stats & analytics.
-              </p>
+              <h3 className="font-bold text-sm flex items-center gap-2"><Briefcase className="w-4 h-4 text-indigo-400" /> Admin Portal (Demo)</h3>
             </div>
-            <button
-              onClick={() => {
-                const newState = !isAdmin;
-                onToggleAdmin(newState);
-                if (newState)
-                  alert("Admin Mode Enabled. Check the new 'Admin' tab.");
-                else alert("Admin Mode Disabled.");
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                isAdmin
-                  ? "bg-indigo-500 text-white"
-                  : "bg-gray-700 text-gray-300"
-              }`}
-            >
+            <button onClick={() => onToggleAdmin(!isAdmin)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-500 text-white cursor-pointer">
               {isAdmin ? "Active" : "Enable"}
             </button>
           </div>
-          <div
-            className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 ${
-              !isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""
-            }`}
-          >
+
+          {/* 11. Dietary Preferences */}
+          <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""}`}>
             <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <Utensils className="w-5 h-5 text-indigo-600" /> Dietary
-              Preferences
+              <Utensils className="w-5 h-5 text-indigo-600" /> Dietary Preferences
             </h3>
             <div className="flex flex-wrap gap-2">
               {diets.map((d) => (
                 <button
                   key={d}
+                  type="button"
                   onClick={() => toggleItem("diets", d)}
-                  className={`px-4 py-2 rounded-full text-xs font-bold border cursor-pointer ${
-                    localProfile.diets?.includes(d)
-                      ? "bg-indigo-600 text-white"
-                      : "bg-white"
-                  }`}
+                  className={`px-4 py-2 rounded-full text-xs font-bold border cursor-pointer ${localProfile.diets?.includes(d) ? "bg-indigo-600 text-white" : "bg-white"}`}
                 >
                   {d}
                 </button>
               ))}
             </div>
           </div>
-          <div
-            className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 ${
-              !isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""
-            }`}
-          >
+
+          {/* 👉 12. Cuisine Match Weighting Sliders on Profile Page */}
+          <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""}`}>
+            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <ChefHat className="w-5 h-5 text-indigo-600" /> Cuisine Preferences (Match Weighting)
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {Object.keys(localProfile.cuisinePreferences || { Mexican: 3, Italian: 3, "Soul Food": 3, American: 3, Asian: 2, Mediterranean: 2 }).map((cuisine) => {
+                const currentVal = (localProfile.cuisinePreferences || {})[cuisine] || 3;
+                return (
+                  <div key={cuisine} className="space-y-1 bg-gray-50 p-3 rounded-2xl border border-gray-100">
+                    <div className="flex justify-between text-xs font-bold text-gray-700">
+                      <span>{cuisine}</span>
+                      <span className="text-indigo-600 font-mono">{currentVal}/5</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      value={currentVal}
+                      onChange={(e) => {
+                        const updatedPrefs = {
+                          ...(localProfile.cuisinePreferences || { Mexican: 3, Italian: 3, "Soul Food": 3, American: 3, Asian: 2, Mediterranean: 2 }),
+                          [cuisine]: parseInt(e.target.value)
+                        };
+                        setLocalProfile({ ...localProfile, cuisinePreferences: updatedPrefs });
+                      }}
+                      className="w-full accent-indigo-600 h-1.5 bg-gray-200 rounded-lg cursor-pointer"
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Household & AI Taste Profile Settings UI (#29 & #57) */}
+          <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""}`}>
+            <h3 className="font-bold text-gray-900 flex items-center gap-2">
+              <Users className="w-5 h-5 text-indigo-600" /> Household & AI Taste Profile Engine
+            </h3>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Configure your household composition, health objectives, and flavor profiles to let the smart assistant tailor macro targets and dietary guardrails automatically.
+            </p>
+
+            {/* 13. Health Goals Selection */}
+            <div className="space-y-1.5 pt-2 border-t border-gray-100">
+              <label className="block text-[10px] font-bold text-gray-500 uppercase">Health Goals & Medical Diets</label>
+              <div className="flex flex-wrap gap-1.5">
+                {["Weight Loss", "Mass-Building / High Protein", "Pregnancy / Postnatal", "Diabetes-Friendly", "Low Sodium", "Heart Healthy"].map((goal) => {
+                  const isSelected = (localProfile.healthGoals || []).includes(goal);
+                  return (
+                    <button
+                      key={goal}
+                      type="button"
+                      onClick={() => {
+                        const current = localProfile.healthGoals || [];
+                        const updated = isSelected ? current.filter(g => g !== goal) : [...current, goal];
+                        setLocalProfile({ ...localProfile, healthGoals: updated });
+                      }}
+                      className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all cursor-pointer ${
+                        isSelected ? "bg-indigo-600 text-white border-indigo-600" : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
+                      }`}
+                    >
+                      {goal}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 14. Disliked Foods & Ingredients */}
+            <div className="space-y-1.5 pt-2">
+              <label className="block text-[10px] font-bold text-gray-500 uppercase">Disliked Foods & Aversions (Comma Separated)</label>
+              <input
+                type="text"
+                placeholder="e.g. cilantro, blue cheese, mushrooms, heavy spice"
+                value={localProfile.dislikedFoods || ""}
+                onChange={(e) => setLocalProfile({ ...localProfile, dislikedFoods: e.target.value })}
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            {/* 15. Kid Preferences & Family Adaptations */}
+            <div className="space-y-1.5 pt-2">
+              <label className="block text-[10px] font-bold text-gray-500 uppercase">Household / Kid Preferences & Adaptations</label>
+              <textarea
+                value={localProfile.kidPreferences || ""}
+                onChange={(e) => setLocalProfile({ ...localProfile, kidPreferences: e.target.value })}
+                placeholder="Describe any picky eater accommodations, e.g. prefers mild seasoning, separate sauces..."
+                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500 h-20 resize-none"
+              />
+            </div>
+          </div>
+
+          {/* 16. Equipment */}
+          <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""}`}>
             <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
               <CookingPot className="w-5 h-5 text-indigo-600" /> Equipment
             </h3>
@@ -4176,44 +4365,17 @@ const ToolsScreen = ({
               {displayEquipment.map((e) => (
                 <button
                   key={e}
+                  type="button"
                   onClick={() => toggleItem("equipment", e)}
-                  className={`px-4 py-2 rounded-full text-xs font-bold border cursor-pointer ${
-                    localProfile.equipment?.includes(e)
-                      ? "bg-indigo-600 text-white"
-                      : "bg-white"
-                  }`}
+                  className={`px-4 py-2 rounded-full text-xs font-bold border cursor-pointer ${localProfile.equipment?.includes(e) ? "bg-indigo-600 text-white" : "bg-white"}`}
                 >
                   {e}
                 </button>
               ))}
             </div>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (
-                  customEquip.trim() &&
-                  !localProfile.equipment?.includes(customEquip.trim())
-                )
-                  toggleItem("equipment", customEquip.trim());
-                setCustomEquip("");
-              }}
-              className="relative"
-            >
-              <input
-                value={customEquip}
-                onChange={(e) => setCustomEquip(e.target.value)}
-                placeholder="Add custom tool..."
-                className="w-full p-3 bg-gray-50 rounded-xl text-xs pr-10"
-              />
-              <button
-                type="submit"
-                disabled={!customEquip.trim()}
-                className="absolute right-2 top-2 text-indigo-600 p-1 cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-              </button>
-            </form>
           </div>
+
+          {/* Save Profile Button */}
           {isDemoAuthenticated && (
             <button
               onClick={() => onSaveProfile(localProfile)}
@@ -4223,7 +4385,7 @@ const ToolsScreen = ({
             </button>
           )}
         </div>
-      )}
+      
     </div>
   );
 };
@@ -4397,6 +4559,57 @@ const FeedbackModal = ({ onClose, effectiveUserId, db, appId }) => {
   );
 };
 
+// 👉 LANDMARK: Soft-Gated Upsell Modal Component (#28.7)
+const SoftGateModal = ({ isOpen, onClose, featureContext = "save recipes & sync your pantry" }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[90] flex items-end sm:items-center justify-center p-4 animate-in fade-in">
+      <div className="bg-white w-full max-w-sm rounded-3xl overflow-hidden shadow-2xl animate-in slide-in-from-bottom">
+        <div className="p-6 text-center space-y-4">
+          
+          <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+            <Crown className="w-8 h-8 text-indigo-600" />
+          </div>
+
+          <div className="space-y-1">
+            <h3 className="text-xl font-black text-gray-900">
+              Unlock Full Access
+            </h3>
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Create a free account to <span className="font-bold text-indigo-600">{featureContext}</span>, protect your data, and unlock zero-waste analytics.
+            </p>
+          </div>
+
+          <div className="space-y-2.5 pt-2">
+            <button
+              onClick={() => {
+                onClose();
+                window.dispatchEvent(new CustomEvent("openLoginModal"));
+              }}
+              className="w-full py-3.5 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-md hover:bg-indigo-700 transition-colors cursor-pointer flex items-center justify-center gap-2"
+            >
+              <LogIn className="w-4 h-4" /> Sign In / Create Free Account
+            </button>
+            
+            <button
+              onClick={onClose}
+              className="w-full py-2.5 bg-gray-50 text-gray-500 font-bold text-xs rounded-xl hover:bg-gray-100 transition-colors cursor-pointer"
+            >
+              Continue as Guest
+            </button>
+          </div>
+
+        </div>
+        
+        <div className="bg-gray-50 p-3 text-center border-t border-gray-100 text-[10px] text-gray-400">
+          No credit card required • Free forever tier available
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const DynamicHeaderBanner = ({ activeTab, userProfile, isDemoAuthenticated, onNavigateProfile }) => {
   // Variations for each tab
   const tabMessages = {
@@ -4480,11 +4693,708 @@ const DynamicHeaderBanner = ({ activeTab, userProfile, isDemoAuthenticated, onNa
 };
 
 // --- APP COMPONENT ---
+
+// Welcoming Onboarding Modal with Intro Hero (#36)
+// 👉 LANDMARK: Categorized & Normalized Onboarding Modal (#36)
+// 👉 LANDMARK: Fully Expanded & Visualized Onboarding Modal (#36)
+// 👉 LANDMARK: Redesigned 4-Step Onboarding Flow with Cuisine Scales & Recipe Teaser (#36)
+const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, onScanReceipt }) => {
+  const [step, setStep] = useState(1);
+  
+  // Frame 2: Personal Info
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [zipCode, setZipCode] = useState("");
+  const [instagram, setInstagram] = useState("");
+  const [tiktok, setTiktok] = useState("");
+  const [profilePhoto, setProfilePhoto] = useState(null);
+
+  // Frame 3: Cooking Profile & Capabilities
+  const [householdSize, setHouseholdSize] = useState("2 People");
+  const [selectedDiets, setSelectedDiets] = useState([]);
+  const [selectedEquipment, setSelectedEquipment] = useState([]);
+  const [cuisinePreferences, setCuisinePreferences] = useState({
+    Mexican: 3,
+    Italian: 3,
+    "Soul Food": 3,
+    American: 3,
+    Asian: 2,
+    Mediterranean: 2
+  });
+
+  // Frame 4: Pantry Seeding
+  const [addedStaples, setAddedStaples] = useState([]);
+  const [activeCategoryTab, setActiveCategoryTab] = useState("Pantry & Grains");
+
+  if (!isOpen) return null;
+
+  const householdOptions = [
+    { label: "Just Me", val: "1" },
+    { label: "2 People", val: "2" },
+    { label: "3-4 Family", val: "3-4" },
+    { label: "5+ Group", val: "5+" },
+  ];
+
+  const dietsList = [
+    "Vegetarian", "Vegan", "Gluten-Free", "Keto", "Paleo",
+    "Nut-Free", "Dairy-Free", "Shellfish-Free", "Egg-Free", "Kosher", "Halal"
+  ];
+
+  const equipmentList = [
+    "Air Fryer", "Blender", "Slow Cooker", "Instant Pot", "Food Processor",
+    "Wok", "Stand Mixer", "Dutch Oven", "Cast Iron Skillet", "Rice Cooker",
+    "Sous Vide", "Grill", "Smoker", "Microwave", "Toaster", "Immersion Blender", "Mandoline", "Pizza Stone"
+  ];
+
+  // 🗂️ Normalized 3-Tier Granular Staples Database
+  const categorizedStaples = {
+    "Pantry & Grains": [
+      { name: "Grains > Pasta > Dried: Spaghetti", base: "Spaghetti" },
+      { name: "Grains > Pasta > Dried: Penne", base: "Penne" },
+      { name: "Grains > Rice > White: Jasmine", base: "Jasmine Rice" },
+      { name: "Grains > Rice > White: Basmati", base: "Basmati Rice" },
+      { name: "Grains > Rice > Speciality: Arborio", base: "Arborio Rice" },
+      { name: "Grains > Noodles > Asian: Rice Noodles", base: "Rice Noodles" },
+      { name: "Grains > Flour > All-Purpose", base: "Flour" },
+      { name: "Grains > Baking > Masa Harina", base: "Masa Harina" },
+      { name: "Grains > Bread Crumbs", base: "Bread Crumbs" },
+    ],
+    "Beans & Tomatoes": [
+      { name: "Pantry > Beans > Black (Dried)", base: "Black Beans" },
+      { name: "Pantry > Beans > Black (Canned)", base: "Black Beans" },
+      { name: "Pantry > Beans > Pinto (Dried)", base: "Pinto Beans" },
+      { name: "Pantry > Beans > Pinto (Canned)", base: "Pinto Beans" },
+      { name: "Pantry > Beans > Garbanzo (Dried)", base: "Garbanzo Beans" },
+      { name: "Pantry > Tomatoes > Canned: Crushed", base: "Crushed Tomatoes" },
+      { name: "Pantry > Tomato Paste", base: "Tomato Paste" },
+    ],
+    "Proteins & Dairy": [
+      { name: "Protein > Beef > Ground (70/30)", base: "Ground Beef", fat: 70 },
+      { name: "Protein > Beef > Ground (90/10)", base: "Ground Beef", fat: 90 },
+      { name: "Protein > Beef > Chuck Roast", base: "Chuck Roast" },
+      { name: "Protein > Beef > Ribeye Steak", base: "Ribeye Steak" },
+      { name: "Protein > Chicken > Whole & Parts", base: "Chicken" },
+      { name: "Protein > Pork > Pancetta", base: "Pancetta" },
+      { name: "Protein > Meat > Italian Sausage", base: "Italian Sausage" },
+      { name: "Protein > Seafood > Shrimp", base: "Shrimp" },
+      { name: "Dairy > Butter (Salted)", base: "Butter" },
+      { name: "Dairy > Cheese: Parmesan Block", base: "Parmesan" },
+      { name: "Dairy > Cheese: Fresh Mozzarella", base: "Mozzarella" },
+      { name: "Dairy > Eggs", base: "Eggs" },
+    ],
+    "Produce & Aromatics": [
+      { name: "Produce > Aromatics > Garlic (Fresh)", base: "Garlic" },
+      { name: "Produce > Aromatics > Onion (Yellow/Red)", base: "Onion" },
+      { name: "Produce > Aromatics > Shallots", base: "Shallots" },
+      { name: "Produce > Herbs > Basil (Fresh)", base: "Basil" },
+      { name: "Produce > Root > Ginger (Fresh)", base: "Ginger" },
+      { name: "Produce > Citrus > Limes", base: "Limes" },
+      { name: "Produce > Citrus > Lemons", base: "Lemons" },
+      { name: "Produce > Herbs > Cilantro", base: "Cilantro" },
+      { name: "Produce > Peppers > Jalapeños (Fresh)", base: "Jalapeños" },
+    ],
+    "Oils, Sauces & Condiments": [
+      { name: "Spices > Oils > Extra Virgin Olive Oil", base: "Olive Oil" },
+      { name: "Spices > Oils > Toasted Sesame Oil", base: "Sesame Oil" },
+      { name: "Spices > Vinegar > Balsamic", base: "Balsamic Vinegar" },
+      { name: "Spices > Condiments > Soy Sauce", base: "Soy Sauce" },
+      { name: "Spices > Condiments > Miso Paste", base: "Miso Paste" },
+      { name: "Spices > Condiments > Chili Crisp", base: "Chili Crisp" },
+      { name: "Spices > Condiments > Kewpie Mayo", base: "Kewpie Mayo" },
+      { name: "Spices > Condiments > Peanut Butter", base: "Peanut Butter" },
+    ],
+    "Baking & Spices": [
+      { name: "Baking > Sugar > White & Brown", base: "Sugar" },
+      { name: "Baking > Sweeteners > Honey", base: "Honey" },
+      { name: "Spices > Salt & Black Pepper", base: "Black Pepper" },
+      { name: "Spices > Garlic Powder", base: "Garlic Powder" },
+      { name: "Spices > Onion Powder", base: "Onion Powder" },
+      { name: "Spices > Dried Oregano", base: "Dried Oregano" },
+      { name: "Pantry > Broths > Chicken, Beef, Veggie", base: "Broth" },
+    ]
+  };
+
+  const toggleSelection = (list, setList, item) => {
+    setList((prev) =>
+      prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]
+    );
+  };
+
+  const handleCuisineWeightChange = (cuisine, val) => {
+    setCuisinePreferences((prev) => ({ ...prev, [cuisine]: parseInt(val) }));
+  };
+
+  const handleQuickAddStaple = (stapleName) => {
+    if (!addedStaples.includes(stapleName)) {
+      setAddedStaples((prev) => [...prev, stapleName]);
+      if (onAddToPantry) onAddToPantry(stapleName);
+    }
+  };
+
+  const handleFinish = () => {
+    onSavePreferences({
+      name,
+      email,
+      zipCode,
+      instagram,
+      tiktok,
+      image: profilePhoto,
+      householdSize,
+      diets: selectedDiets,
+      equipment: selectedEquipment,
+      cuisinePreferences
+    });
+    onClose();
+  };
+
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const resized = await resizeImage(file, 200);
+      setProfilePhoto(resized);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/70 z-[80] flex items-center justify-center p-4 animate-in fade-in">
+      <div className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl space-y-5 animate-in slide-in-from-bottom max-h-[92vh] overflow-y-auto">
+        
+        {/* Header & Step Indicator */}
+        <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-indigo-100 text-indigo-600 rounded-2xl">
+              <ChefHat className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="font-black text-base text-gray-900 leading-tight">Welcome to Pantry Chef</h3>
+              <p className="text-[10px] text-indigo-600 font-bold uppercase tracking-wider">
+                Step {step} of 4 • {step === 1 ? "Introduction" : step === 2 ? "Personal Info" : step === 3 ? "Cooking Profile" : "Initial Pantry"}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={onClose}
+              className="text-xs font-bold text-gray-400 hover:text-gray-700 cursor-pointer px-2 py-1 bg-gray-50 rounded-lg"
+            >
+              Skip for now
+            </button>
+            <button 
+              onClick={onClose} 
+              className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Progress Bar */}
+        <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+          <div 
+            className="bg-indigo-600 h-full transition-all duration-300"
+            style={{ width: `${(step / 4) * 100}%` }}
+          ></div>
+        </div>
+
+        {/* FRAME 1: Welcome & Intended Use */}
+        {step === 1 && (
+          <div className="space-y-4 animate-in fade-in text-center py-2">
+            <div className="w-16 h-16 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center mx-auto shadow-inner">
+              <ChefHat className="w-8 h-8" />
+            </div>
+            <div className="space-y-2">
+              <h4 className="font-black text-lg text-gray-900">Your First Step to Smarter Cooking</h4>
+              <p className="text-xs text-gray-600 leading-relaxed max-w-sm mx-auto">
+                Pantry Chef is built to help you waste less and save more. The best way to use the app is to fill out as much profile and inventory information as possible upfront. The assistant learns from how you interact with your pantry, meals, and grocery lists to tailor everything specifically to you.
+              </p>
+            </div>
+            <div className="p-3 bg-gray-50 rounded-2xl border border-gray-100 text-[11px] text-gray-500">
+              Don't worry - you can always update or change any of these settings later inside your profile.
+            </div>
+            <button
+              onClick={() => setStep(2)}
+              className="w-full py-3.5 bg-indigo-600 text-white font-bold text-xs rounded-2xl shadow-md hover:bg-indigo-700 cursor-pointer"
+            >
+              Get Started →
+            </button>
+          </div>
+        )}
+
+        {/* FRAME 2: Personal Information */}
+        {step === 2 && (
+          <div className="space-y-4 animate-in fade-in">
+            <div className="text-center">
+              <h4 className="font-bold text-sm text-gray-900">Personal Information</h4>
+              <p className="text-xs text-gray-500">Tell us a bit about yourself so we can personalize your experience.</p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Ishon Jones"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Zip Code</label>
+                <input
+                  type="text"
+                  placeholder="e.g. 90210"
+                  maxLength={5}
+                  value={zipCode}
+                  onChange={(e) => setZipCode(e.target.value)}
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500"
+                />
+                <span className="text-[8px] text-gray-400">Used for local grocery deals & pricing</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Email Address</label>
+              <input
+                type="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500"
+              />
+              <p className="text-[9px] text-gray-400 mt-0.5">
+                🔒 Your email is never shared with third parties or advertisers. It is used strictly for logging in, notifications, and account communications.
+              </p>
+            </div>
+
+            {/* Social Handles with Integrated Note */}
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <label className="text-[10px] font-bold text-gray-500 uppercase">Social Handles</label>
+                <span className="text-[9px] text-gray-400">Socials display on your public profile</span>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <input
+                  type="text"
+                  placeholder="Instagram @username"
+                  value={instagram}
+                  onChange={(e) => setInstagram(e.target.value)}
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500"
+                />
+                <input
+                  type="text"
+                  placeholder="TikTok @username"
+                  value={tiktok}
+                  onChange={(e) => setTiktok(e.target.value)}
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500"
+                />
+              </div>
+            </div>
+
+            {/* Profile Photo */}
+            <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-2xl border border-gray-200">
+              <div className="w-12 h-12 rounded-full bg-white border border-gray-300 overflow-hidden flex items-center justify-center shrink-0">
+                {profilePhoto ? (
+                  <img src={profilePhoto} alt="Preview" className="w-full h-full object-cover" />
+                ) : (
+                  <UserCircle className="w-6 h-6 text-gray-400" />
+                )}
+              </div>
+              <div className="flex-1">
+                <label className="block text-xs font-bold text-gray-800">Profile Photo</label>
+                <label className="text-[10px] text-indigo-600 font-bold hover:underline cursor-pointer">
+                  Upload image...
+                  <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" />
+                </label>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <button
+                onClick={() => setStep(1)}
+                className="py-2.5 px-4 bg-gray-100 text-gray-700 font-bold text-xs rounded-xl hover:bg-gray-200 cursor-pointer"
+              >
+                ← Back
+              </button>
+              <button
+                onClick={() => setStep(3)}
+                className="flex-1 py-2.5 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-md hover:bg-indigo-700 cursor-pointer"
+              >
+                Next: Cooking Profile →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* FRAME 3: Cooking Profile & Capabilities */}
+        {step === 3 && (
+          <div className="space-y-4 animate-in fade-in">
+            <div className="text-center">
+              <h4 className="font-bold text-sm text-gray-900">Your Cooking Profile</h4>
+              <p className="text-xs text-gray-500 leading-relaxed max-w-sm mx-auto">
+                This information is used to present recipes specific to what you can do. We provide smart substitutions so you never miss out on meals - adapting recipes to fit your equipment rather than restricting your choices.
+              </p>
+            </div>
+
+            {/* Household Size */}
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Household / Serving Size</label>
+              <div className="grid grid-cols-4 gap-2">
+                {householdOptions.map((opt) => (
+                  <button
+                    key={opt.val}
+                    type="button"
+                    onClick={() => setHouseholdSize(opt.label)}
+                    className={`py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                      householdSize === opt.label
+                        ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                        : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Dietary Preferences & Allergies */}
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Dietary Preferences & Allergies</label>
+              <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto pr-1">
+                {dietsList.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => toggleSelection(selectedDiets, setSelectedDiets, d)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-bold border cursor-pointer ${
+                      selectedDiets.includes(d)
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
+                    }`}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Cooking Equipment & Appliances */}
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Cooking Equipment & Appliances (Kitchen & Outdoor)</label>
+              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                {equipmentList.map((eq) => (
+                  <button
+                    key={eq}
+                    type="button"
+                    onClick={() => toggleSelection(selectedEquipment, setSelectedEquipment, eq)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-bold border cursor-pointer ${
+                      selectedEquipment.includes(eq)
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
+                    }`}
+                  >
+                    {eq}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Cuisine Preference Sliders (Weight Scale 1-5) */}
+            <div className="space-y-2 bg-gray-50 p-3 rounded-2xl border border-gray-200">
+              <label className="block text-[10px] font-bold text-gray-500 uppercase">Cuisine Preferences (Match Weighting)</label>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                {Object.keys(cuisinePreferences).map((cuisine) => (
+                  <div key={cuisine} className="space-y-0.5">
+                    <div className="flex justify-between text-[11px] font-bold text-gray-700">
+                      <span>{cuisine}</span>
+                      <span className="text-indigo-600 font-mono">{cuisinePreferences[cuisine]}/5</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="1"
+                      max="5"
+                      value={cuisinePreferences[cuisine]}
+                      onChange={(e) => handleCuisineWeightChange(cuisine, e.target.value)}
+                      className="w-full accent-indigo-600 h-1 bg-gray-200 rounded-lg cursor-pointer"
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setStep(2)}
+                className="py-2.5 px-4 bg-gray-100 text-gray-700 font-bold text-xs rounded-xl hover:bg-gray-200 cursor-pointer"
+              >
+                ← Back
+              </button>
+              <button
+                onClick={() => setStep(4)}
+                className="flex-1 py-2.5 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-md hover:bg-indigo-700 cursor-pointer"
+              >
+                Next: Initial Pantry →
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* FRAME 4: Stock Your Initial Pantry */}
+        {step === 4 && (
+          <div className="space-y-4 animate-in fade-in">
+            <div className="text-center space-y-1">
+              <h4 className="font-bold text-sm text-gray-900">Stock Your Initial Pantry</h4>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                This is just to get you started quickly - you can always go crazy adding more items later.
+              </p>
+            </div>
+
+            {/* Ways to Add (Light & Fast Options) */}
+            <div className="grid grid-cols-2 gap-2">
+              <label className="bg-indigo-50 border border-indigo-100 p-2.5 rounded-xl cursor-pointer flex flex-col items-center justify-center text-center hover:bg-indigo-100 transition-colors">
+                <Scan className="w-4 h-4 text-indigo-600 mb-0.5" />
+                <span className="text-xs font-bold text-indigo-900">Scan Receipt</span>
+                <span className="text-[8px] text-indigo-500">Quick automated import</span>
+                <input type="file" capture="environment" onChange={onScanReceipt} className="hidden" />
+              </label>
+
+              <div className="bg-purple-50 border border-purple-100 p-2.5 rounded-xl flex flex-col items-center justify-center text-center">
+                <Speaker className="w-4 h-4 text-purple-600 mb-0.5" />
+                <span className="text-xs font-bold text-purple-900">Voice Input</span>
+                <span className="text-[8px] text-purple-500">Fast & low cost</span>
+              </div>
+            </div>
+
+            {/* Category Tabs (Desktop Wrapping Enabled) */}
+            <div className="space-y-2">
+              <div className="flex md:flex-wrap overflow-x-auto md:overflow-visible gap-1 pb-1 md:pb-0 scrollbar-hide border-b border-gray-100">
+                {Object.keys(categorizedStaples).map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setActiveCategoryTab(cat)}
+                    className={`px-3 py-1.5 text-[10px] md:text-xs font-bold whitespace-nowrap md:whitespace-normal rounded-lg transition-all cursor-pointer ${
+                      activeCategoryTab === cat
+                        ? "bg-indigo-600 text-white shadow-xs"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+
+              {/* Items Grid */}
+              <div className="bg-gray-50 p-3 rounded-2xl border border-gray-200 min-h-[140px] max-h-[190px] overflow-y-auto">
+                <div className="flex justify-between items-center mb-2 px-1">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase">{activeCategoryTab}</span>
+                  {addedStaples.length > 0 && (
+                    <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full">
+                      {addedStaples.length} Added
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {categorizedStaples[activeCategoryTab].map((s) => {
+                    const isAdded = addedStaples.includes(s.name);
+                    return (
+                      <button
+                        key={s.name}
+                        type="button"
+                        onClick={() => handleQuickAddStaple(s.name)}
+                        className={`px-2.5 py-1.5 rounded-xl text-[11px] font-medium border transition-all cursor-pointer flex items-center gap-1 ${
+                          isAdded
+                            ? "bg-green-100 text-green-800 border-green-300 font-bold"
+                            : "bg-white text-gray-700 border-gray-200 hover:bg-gray-100"
+                        }`}
+                      >
+                        {isAdded ? <CheckCircle className="w-3 h-3 text-green-600 shrink-0" /> : <Plus className="w-3 h-3 text-gray-400 shrink-0" />}
+                        <span className="truncate max-w-[190px]">{s.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => setStep(3)}
+                className="py-2.5 px-4 bg-gray-100 text-gray-700 font-bold text-xs rounded-xl hover:bg-gray-200 cursor-pointer"
+              >
+                ← Back
+              </button>
+              <button
+                onClick={handleFinish}
+                className="flex-1 py-3 bg-green-600 text-white font-bold text-xs rounded-xl shadow-lg hover:bg-green-700 active:scale-95 transition-all cursor-pointer"
+              >
+                🎉 Complete Setup & View Tailored Recipes
+              </button>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </div>
+  );
+};
+
+// IncompleteProfileBanner
+const IncompleteProfileBanner = ({ profile, onCompleteProfile }) => {
+  const [dismissed, setDismissed] = useState(false);
+
+  const isIncomplete = !profile?.zipCode || !(profile?.diets?.length > 0);
+
+  if (!isIncomplete || dismissed) return null;
+
+  return (
+    <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-2xl mb-4 flex items-center justify-between gap-3 shadow-xs animate-in fade-in">
+      <div className="flex items-center gap-2.5">
+        <div className="p-2 bg-amber-100 text-amber-700 rounded-xl shrink-0">
+          <AlertCircle className="w-4 h-4" />
+        </div>
+        <div>
+          <h4 className="font-bold text-xs text-amber-900 leading-tight">
+            Incomplete Profile
+          </h4>
+          <p className="text-[10px] text-amber-700 leading-snug">
+            Add your Zip Code & Dietary Preferences to unlock local deal hunting and tailored meal matching.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2 shrink-0">
+        <button
+          onClick={onCompleteProfile}
+          className="px-3 py-1.5 bg-amber-600 text-white text-[10px] font-bold rounded-lg shadow-xs hover:bg-amber-700 cursor-pointer"
+        >
+          Complete
+        </button>
+        <button
+          onClick={() => setDismissed(true)}
+          className="p-1 text-amber-500 hover:text-amber-800 cursor-pointer"
+        >
+          <X className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+
+// 👉 LANDMARK: Dynamic Quick Tips Data Pool & State (#64)
+// 👉 LANDMARK: Expanded Dynamic Quick Tips Data Pool (#64)
+const QUICK_TIPS_POOL = [
+  {
+    category: "Freshness",
+    text: "Keep your receipt scanner handy after grocery runs to automatically populate item shelf lives and estimated costs."
+  },
+  {
+    category: "Storage",
+    text: "Never store onions and potatoes together—onions release ethylene gas that causes potatoes to sprout prematurely."
+  },
+  {
+    category: "Pro Technique",
+    text: "Always let meat rest for 5-10 minutes after cooking to allow the muscle fibers to relax and retain their juices."
+  },
+  {
+    category: "Zero Waste",
+    text: "Save vegetable scraps and chicken bones in a freezer bag to easily batch-cook homemade stock later."
+  },
+  {
+    category: "Knife Skills",
+    text: "Curl your fingertips inward like a 'claw' when holding ingredients to protect your knuckles while chopping."
+  },
+  {
+    category: "Smart Panning",
+    text: "Preheat your skillet before adding oil ('hot pan, cold oil') to prevent food from sticking to the surface."
+  },
+  {
+    category: "Baking Science",
+    text: "Bring eggs and dairy to room temperature before baking to ensure they emulsify smoothly into batters."
+  },
+  {
+    category: "Herb Preservation",
+    text: "Store fresh soft herbs like cilantro and parsley upright in a jar with a little water, covered loosely with a plastic bag."
+  },
+  {
+    category: "Flavor Balancing",
+    text: "If a dish tastes too acidic or sharp, a pinch of sugar or a pat of butter can round out and balance the flavor."
+  },
+  {
+    category: "Citrus Trick",
+    text: "Roll citrus fruits firmly on the counter before juicing to break down internal membranes and yield more juice."
+  },
+  {
+    category: "Meat Prep",
+    text: "Pat proteins completely dry with paper towels before searing to get an even, golden-brown crust."
+  },
+  {
+    category: "Pantry Defense",
+    text: "Store brown sugar with a slice of fresh bread or a terracotta sugar saver to keep it soft and prevent hardening."
+  },
+  {
+    category: "Garlic Hack",
+    text: "Crush garlic cloves lightly with the flat side of your chef's knife to make peeling the papery skin effortless."
+  },
+  {
+    category: "Pasta Science",
+    text: "Always salt your pasta boiling water until it tastes like the sea; it's your only chance to season the pasta from the inside out."
+  },
+  {
+    category: "Kitchen Safety",
+    text: "Never use water to put out a grease fire; smother it with a tight-fitting lid or baking soda instead."
+  },
+  {
+    category: "Avocado Lifespan",
+    text: "Store cut avocados with the pit intact and a brush of lime juice or olive oil tightly wrapped in plastic to slow browning."
+  },
+  {
+    category: "Sauce Rescue",
+    text: "If your pan sauce breaks or separates, whisk in a tablespoon of ice-cold water or heavy cream to bring it back together."
+  },
+  {
+    category: "Smart Seasoning",
+    text: "Season your food in layers throughout the cooking process rather than all at once at the very end."
+  }
+];
+
 const App = () => {
-  const [userId, setUserId] = useState(null);
+
+const [userId, setUserId] = useState(null);
   const [customId, setCustomId] = useState(
     localStorage.getItem("pantry_chef_custom_id") || ""
   );
+  
+  // 👉 LANDMARK: Dynamic Rotating Quick Tips with Auto-Rotate & Hover State (#64)
+  const [currentTip, setCurrentTip] = useState(() => {
+    return QUICK_TIPS_POOL[Math.floor(Math.random() * QUICK_TIPS_POOL.length)];
+  });
+  const [isTipAnimating, setIsTipAnimating] = useState(false);
+  const [isTipPaused, setIsTipPaused] = useState(false);
+
+  const handleRotateTip = () => {
+    if (isTipAnimating) return;
+    setIsTipAnimating(true);
+    setTimeout(() => {
+      let nextTip;
+      do {
+        nextTip = QUICK_TIPS_POOL[Math.floor(Math.random() * QUICK_TIPS_POOL.length)];
+      } while (nextTip.text === currentTip.text && QUICK_TIPS_POOL.length > 1);
+      setCurrentTip(nextTip);
+      setIsTipAnimating(false);
+    }, 250); // Matches transition duration
+  };
+
+  // Auto-rotate every 8 seconds unless hovered
+  useEffect(() => {
+    if (isTipPaused) return;
+    const interval = setInterval(() => {
+      handleRotateTip();
+    }, 8000);
+    return () => clearInterval(interval);
+  }, [currentTip, isTipPaused]);
+  
   const effectiveUserId = customId.trim() || userId;
   
   // 🚀 NATIVE ROUTER: Syncs activeTab with URL & Browser Back Button
@@ -4531,9 +5441,29 @@ const App = () => {
   const [recentlyViewed, setRecentlyViewed] = useState([]);
   const [purchaseHistory, setPurchaseHistory] = useState([]);
   const [wasteHistory, setWasteHistory] = useState([]);
+  // 👉 LANDMARK: Expanded Household & AI Taste Profile Schema (#29 & #57)
   const [userProfile, setUserProfile] = useState({
+    name: "",
+    email: "",
+    zipCode: "",
+    householdSize: "2 People",
+    householdMembers: [
+      { name: "Adult 1", ageGroup: "Adult", restrictions: [] }
+    ],
     diets: [],
     equipment: [],
+    cuisinePreferences: {
+      Mexican: 3,
+      Italian: 3,
+      "Soul Food": 3,
+      American: 3,
+      Asian: 2,
+      Mediterranean: 2
+    },
+    // NEW: Taste Profile & Persona Engine Fields
+    healthGoals: [], // e.g., "Weight Loss", "Mass-Building", "Pregnancy", "Diabetes-Friendly"
+    dislikedFoods: "", // e.g., "cilantro, mushrooms, olives"
+    kidPreferences: "Standard kid-friendly (mild flavors, hidden veggies if possible)",
     image: null,
     creatorProgress: 0,
     challenges: {},
@@ -4615,6 +5545,11 @@ const handleBulkAdd = async (e) => {
   const [systemNotification, setSystemNotification] = useState(null);
   const [isDemoAuthenticated, setIsDemoAuthenticated] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+
+  // Gated Onboarding State (Logged-In Users Only)
+  const [showOnboarding, setShowOnboarding] = useState(() => {
+    return isDemoAuthenticated && !localStorage.getItem("pantry_chef_onboarded");
+  });
   const hasAutoLoaded = useRef(false);
   const [isVoiceProcessing, setIsVoiceProcessing] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
@@ -4795,8 +5730,24 @@ const handleBulkAdd = async (e) => {
     return () => window.removeEventListener("apiUsageUpdated", handleUpdate);
   }, []);
 
+  // 👉 LANDMARK: Soft-Gate State Variables
+  const [showSoftGate, setShowSoftGate] = useState(false);
+  const [softGateContext, setSoftGateContext] = useState("save recipes & sync your pantry");
+  useEffect(() => {
+    const handleOpenLoginModal = () => setShowLoginModal(true);
+    window.addEventListener("openLoginModal", handleOpenLoginModal);
+    return () => window.removeEventListener("openLoginModal", handleOpenLoginModal);
+  }, []);
+
+  // Trigger Onboarding on Login if Not Completed
   const handleLogin = () => {
     setShowLoginModal(false);
+    setIsDemoAuthenticated(true);
+    
+    if (!localStorage.getItem("pantry_chef_onboarded")) {
+      setShowOnboarding(true);
+    }
+
     setNotification("🎉 Successfully signed in! Syncing data...");
     setTimeout(() => setNotification(null), 3000);
   };
@@ -5623,7 +6574,12 @@ const handleBulkAdd = async (e) => {
       );
   };
   const handleToggleSave = async (recipe) => {
-    if (!effectiveUserId) return;
+    if (!isDemoAuthenticated) {
+      setSoftGateContext("save recipes to your cloud kitchen & sync across devices");
+      setShowSoftGate(true);
+      return;
+    }
+
     const existing = savedRecipes.find((r) => r.title === recipe.title);
     if (existing) {
       await deleteDoc(
@@ -5845,6 +6801,11 @@ const handleBulkAdd = async (e) => {
             
             {/* LEFT WORKSPACE (Takes 2 columns) */}
             <div className="md:col-span-2 space-y-4">
+              {/* Profile Reminder Banner */}
+              <IncompleteProfileBanner
+                profile={userProfile}
+                onCompleteProfile={() => setActiveTab("profile")}
+              />
               {/* Receipt Scan & Voice Input Header Row */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                 <label className="bg-indigo-600 rounded-2xl p-4 text-white shadow-xl relative overflow-hidden active:scale-95 transition-all cursor-pointer flex flex-col items-center justify-center text-center">
@@ -6069,25 +7030,40 @@ const handleBulkAdd = async (e) => {
 
             {/* RIGHT SIDEBAR WIDGET COLUMN */}
             <div className="hidden md:block space-y-4">
-              <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
-                <h4 className="font-bold text-gray-900 text-sm mb-3 flex items-center gap-2">
-                  <Flame className="w-4 h-4 text-orange-500" /> Active Goal
-                </h4>
                 <ChallengeWidget
                   challenges={userProfile.challenges}
                   onViewAll={() => setActiveTab("profile")}
                 />
-              </div>
-
+              
               <PantryValuationCard inventory={inventory} />
 
-              <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
-                <h4 className="font-bold text-gray-900 text-sm mb-3 flex items-center gap-2">
-                  <BookOpen className="w-4 h-4 text-indigo-600" /> Quick Tips
-                </h4>
-                <p className="text-xs text-gray-500 leading-relaxed">
-                  Keep your receipt scanner handy after grocery runs to automatically populate item shelf lives and estimated costs.
+              {/* 👉 LANDMARK: Animated & Auto-Rotating Quick Tips Widget (#64) */}
+              <div 
+                onMouseEnter={() => setIsTipPaused(true)}
+                onMouseLeave={() => setIsTipPaused(false)}
+                className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm space-y-3 relative overflow-hidden group"
+              >
+                <div className="flex justify-between items-center">
+                  <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
+                    <BookOpen className="w-4 h-4 text-indigo-600" /> Quick Tips
+                  </h4>
+                  <span className="text-[9px] font-bold bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                    {currentTip.category}
+                  </span>
+                </div>
+                
+                <p className={`text-xs text-gray-500 leading-relaxed min-h-[42px] transition-all duration-300 transform ${
+                  isTipAnimating ? "opacity-0 -translate-y-2" : "opacity-100 translate-y-0"
+                }`}>
+                  "{currentTip.text}"
                 </p>
+
+                <button
+                  onClick={handleRotateTip}
+                  className="w-full py-1.5 bg-gray-50 hover:bg-gray-100 text-gray-600 rounded-xl text-[10px] font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 border border-gray-200/60"
+                >
+                  <RefreshCw className="w-3 h-3 text-indigo-500" /> Next Tip
+                </button>
               </div>
             </div>
 
@@ -6733,57 +7709,88 @@ const handleBulkAdd = async (e) => {
 
           </div>
         )}
-        {activeTab === "profile" && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-2 md:p-6">
-            
-            {/* LEFT WORKSPACE: Settings & Configuration (Takes 2 columns) */}
-            <div className="md:col-span-2 space-y-6">
-              <ToolsScreen
-                profile={userProfile}
-                onSaveProfile={handleSaveProfile}
-                isAdmin={isAdmin}
-                onToggleAdmin={handleAdminToggle}
-                isDemoAuthenticated={isDemoAuthenticated}
-                onShowLogin={() => setShowLoginModal(true)}
-                initialSubTab={toolsActiveTab} // Pass this down to control initial subtab
-              />
-            </div>
+        {/* LANDMARK: Tools View Block */}
+        {activeTab === "tools" && <ToolsView />}
 
-            {/* RIGHT SIDEBAR WIDGET COLUMN: Trophy Case & Quick Guides */}
-            <div className="hidden md:block space-y-6">
-              <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-                <h4 className="font-bold text-gray-900 text-sm mb-3 flex items-center gap-2">
+        {/* LANDMARK: Profile / Settings View Block */}
+        {activeTab === "profile" && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-2 md:p-6 max-w-7xl mx-auto">
+          {/* Left Main Content Column (Takes 2/3 width) */}
+          <div className="md:col-span-2 space-y-6">
+            <ToolsScreen
+              profile={userProfile}
+              onSaveProfile={handleSaveProfile}
+              isAdmin={isAdmin}
+              onToggleAdmin={handleAdminToggle}
+              isDemoAuthenticated={isDemoAuthenticated}
+              onShowLogin={() => setShowLoginModal(true)}
+              onRestartTour={() => setShowOnboarding(true)}
+            />
+          </div>
+
+          {/* Right Sidebar Column: Sticky Trophy Case */}
+          <div className="hidden md:block space-y-6">
+            <div className="sticky top-20 bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                <h4 className="font-bold text-gray-900 text-sm flex items-center gap-2">
                   <Trophy className="w-4 h-4 text-indigo-600" /> Trophy Case Overview
                 </h4>
-                <p className="text-xs text-gray-500 mb-4">
-                  Complete challenges to unlock kitchen achievements and level up your status.
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  {CHALLENGES.slice(0, 4).map((c) => {
-                    const current = (userProfile.challenges || {})[c.id] || 0;
-                    const isUnlocked = current >= c.target;
-                    return (
-                      <div key={c.id} className="bg-gray-50 p-2.5 rounded-2xl border border-gray-100 flex items-center gap-2">
-                        <div className={`p-2 rounded-full ${isUnlocked ? "bg-indigo-100 text-indigo-600" : "bg-gray-200 text-gray-400"}`}>
-                          {c.icon}
+                <span className="text-[10px] font-mono font-bold bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full">
+                  {Object.keys(userProfile?.challenges || {}).length} Unlocked
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 leading-relaxed">
+                Complete kitchen challenges to unlock badges and level up your status.
+              </p>
+
+              {/* Vertical List of Trophies for Right Sidebar */}
+              <div className="space-y-2.5 max-h-[calc(100vh-220px)] overflow-y-auto pr-1 no-scrollbar">
+                {CHALLENGES.map((c) => {
+                  const current = (userProfile?.challenges || {})[c.id] || 0;
+                  const percent = Math.min((current / c.target) * 100, 100);
+                  const isUnlocked = percent >= 100;
+                  return (
+                    <div
+                      key={c.id}
+                      className="bg-gray-50 p-3 rounded-2xl border border-gray-100 flex items-center gap-3 transition-all"
+                    >
+                      <div
+                        className={`p-2.5 rounded-full shrink-0 ${
+                          isUnlocked
+                            ? "bg-indigo-100 text-indigo-600 shadow-xs"
+                            : "bg-gray-200 text-gray-400"
+                        }`}
+                      >
+                        {c.icon}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-center mb-1">
+                          <h5 className="font-bold text-xs text-gray-800 truncate">
+                            {c.title}
+                          </h5>
+                          <span className="text-[9px] font-mono text-gray-400">
+                            {current}/{c.target}
+                          </span>
                         </div>
-                        <div>
-                          <p className="text-[10px] font-bold text-gray-800 leading-tight">{c.title}</p>
-                          <p className="text-[9px] font-mono text-gray-400">{current}/{c.target}</p>
+                        <div className="w-full bg-gray-200 rounded-full h-1.5">
+                          <div
+                            className={`h-1.5 rounded-full transition-all duration-500 ${
+                              isUnlocked ? "bg-indigo-500" : "bg-gray-400"
+                            }`}
+                            style={{ width: `${percent}%` }}
+                          ></div>
                         </div>
                       </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm">
-                <KitchenGuide />
+                    </div>
+                  );
+                })}
               </div>
             </div>
-
           </div>
-        )}
+        </div>
+      )}
+
+
         {activeTab === "admin" && isAdmin && (
           <div className="grid grid-cols-1 gap-6 p-2 md:p-6">
             <div className="space-y-6">
@@ -6793,6 +7800,7 @@ const handleBulkAdd = async (e) => {
                 onSeed={seedCommunity}
                 onPurge={purgeTestData}
                 onImpersonate={handleImpersonate}
+                effectiveUserId={effectiveUserId}
               />
             </div>
           </div>
@@ -6846,6 +7854,23 @@ const handleBulkAdd = async (e) => {
         />
       )}
 
+      {/* Onboarding Modal Call with Active Handlers */}
+      <OnboardingModal
+        isOpen={showOnboarding}
+        onClose={() => {
+          setShowOnboarding(false);
+          localStorage.setItem("pantry_chef_onboarded", "true");
+        }}
+        onSavePreferences={(prefs) => {
+          const updated = { ...userProfile, ...prefs };
+          setUserProfile(updated);
+          handleSaveProfile(updated);
+          localStorage.setItem("pantry_chef_onboarded", "true");
+        }}
+        onAddToPantry={handleAddToPantry}
+        onScanReceipt={handleScan}
+      />
+
       {/* Render as a layered overlay on top of the main UI */}
       {showMealPrep && (
         <MealPrepView 
@@ -6895,6 +7920,8 @@ const handleBulkAdd = async (e) => {
         partnerData={redirectModalData}
       />
 
+
+
       {/* Desktop Left Sidebar Navigation */}
       <nav className="hidden md:flex flex-col fixed left-0 top-0 bottom-0 w-64 bg-white border-r border-gray-200 p-6 z-30 shadow-sm">
         <div className="flex items-center gap-2 mb-8">
@@ -6927,8 +7954,22 @@ const handleBulkAdd = async (e) => {
           <button onClick={() => setActiveTab("community")} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${activeTab === "community" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50 cursor-pointer"}`}>
             <Users className="w-5 h-5" /> Social
           </button>
-          <button onClick={() => setActiveTab("profile")} className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${activeTab === "profile" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50 cursor-pointer"}`}>
-            <ConfigIcon className="w-5 h-5" /> Tools
+          <button 
+            onClick={() => setActiveTab("tools")} 
+            className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${
+              activeTab === "tools" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50 cursor-pointer"
+            }`}
+          >
+            <BookOpen className="w-5 h-5" /> Tools & Guides
+          </button>
+
+          <button 
+            onClick={() => setActiveTab("profile")} 
+            className={`w-full flex items-center gap-3 p-3 rounded-xl font-bold text-sm ${
+              activeTab === "profile" ? "bg-indigo-50 text-indigo-600" : "text-gray-500 hover:bg-gray-50 cursor-pointer"
+            }`}
+          >
+            <ConfigIcon className="w-5 h-5" /> Settings & Profile
           </button>
           <button 
             onClick={() => setShowFeedbackModal(true)} 
@@ -6944,94 +7985,109 @@ const handleBulkAdd = async (e) => {
       </nav>
 
       {/* Mobile Bottom Navigation (Hidden on desktop/tablet) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 max-w-lg mx-auto p-4 bg-white/90 backdrop-blur-xl border-t flex items-center justify-around pb-8 z-30 shadow-up">
-        <button
-          onClick={() => setActiveTab("pantry")}
-          className={`flex flex-col items-center gap-1 transition-all ${
-            activeTab === "pantry"
-              ? "text-indigo-600 scale-110"
-              : "text-gray-300"
-          }`}
-        >
-          <Home className="w-5 h-5" />
-          <span className="text-[9px] font-bold">PANTRY</span>
-        </button>
-        <button
-          onClick={() => setActiveTab("recipes")}
-          className={`flex flex-col items-center gap-1 transition-all ${
-            activeTab === "recipes"
-              ? "text-indigo-600 scale-110"
-              : "text-gray-300"
-          }`}
-        >
-          <CookingPot className="w-5 h-5" />
-          <span className="text-[9px] font-bold">COOK</span>
-        </button>
-        <button
-          onClick={() => setActiveTab("shopping")}
-          className={`flex flex-col items-center gap-1 transition-all relative ${
-            activeTab === "shopping"
-              ? "text-indigo-600 scale-110"
-              : "text-gray-300"
-          }`}
-        >
-          <div className="relative">
-            <ShoppingCart className="w-5 h-5" />
-            {groceryList.filter(i => !i.purchased).length > 0 && (
-              <span className="absolute -top-1 -right-2 bg-indigo-600 text-white text-[9px] font-bold w-4 h-4 rounded-full flex items-center justify-center">
-                {groceryList.filter(i => !i.purchased).length}
-              </span>
-            )}
-          </div>
-          <span className="text-[9px] font-bold">SHOP</span>
-        </button>
-        <button
-          onClick={() => setActiveTab("budget")}
-          className={`flex flex-col items-center gap-1 transition-all ${
-            activeTab === "budget"
-              ? "text-indigo-600 scale-110"
-              : "text-gray-300"
-          }`}
-        >
-          <DollarSign className="w-5 h-5" />
-          <span className="text-[9px] font-bold">BUDGET</span>
-        </button>
-        <button
-          onClick={() => setActiveTab("community")}
-          className={`flex flex-col items-center gap-1 transition-all ${
-            activeTab === "community"
-              ? "text-indigo-600 scale-110"
-              : "text-gray-300"
-          }`}
-        >
-          <Users className="w-5 h-5" />
-          <span className="text-[9px] font-bold">SOCIAL</span>
-        </button>
-        <button
-          onClick={() => setActiveTab("profile")}
-          className={`flex flex-col items-center gap-1 transition-all ${
-            activeTab === "profile"
-              ? "text-indigo-600 scale-110"
-              : "text-gray-300"
-          }`}
-        >
-          <ConfigIcon className="w-5 h-5" />
-          <span className="text-[9px] font-bold">TOOLS</span>
-        </button>
-        {isAdmin && (
+      <div className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-gray-200 z-30 shadow-up py-3 relative">
+        <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-white via-white/90 to-transparent pointer-events-none z-20 flex items-center justify-end pr-1">
+          <div className="w-1 h-6 bg-indigo-500/30 rounded-full blur-[1px] animate-pulse" />
+        </div>
+
+        <div className="flex items-center overflow-x-auto no-scrollbar gap-1 max-w-md mx-auto px-3 pr-14">
           <button
-            onClick={() => setActiveTab("admin")}
-            className={`flex flex-col items-center gap-1 transition-all ${
-              activeTab === "admin"
-                ? "text-indigo-600 scale-110"
-                : "text-gray-300"
+            onClick={() => setActiveTab("pantry")}
+            className={`flex flex-col items-center justify-center shrink-0 w-[60px] py-1 transition-all cursor-pointer ${
+              activeTab === "pantry" ? "text-indigo-600 scale-105 font-bold" : "text-gray-400"
             }`}
           >
-            <Briefcase className="w-5 h-5" />
-            <span className="text-[9px] font-bold">ADMIN</span>
+            <Home className="w-5 h-5" />
+            <span className="text-[9px] tracking-tight mt-0.5">PANTRY</span>
           </button>
-        )}
+
+          <button
+            onClick={() => setActiveTab("recipes")}
+            className={`flex flex-col items-center justify-center shrink-0 w-[60px] py-1 transition-all cursor-pointer ${
+              activeTab === "recipes" ? "text-indigo-600 scale-105 font-bold" : "text-gray-400"
+            }`}
+          >
+            <CookingPot className="w-5 h-5" />
+            <span className="text-[9px] tracking-tight mt-0.5">COOK</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("shopping")}
+            className={`flex flex-col items-center justify-center shrink-0 w-[60px] py-1 transition-all cursor-pointer relative ${
+              activeTab === "shopping" ? "text-indigo-600 scale-105 font-bold" : "text-gray-400"
+            }`}
+          >
+            <div className="relative">
+              <ShoppingCart className="w-5 h-5" />
+              {groceryList.filter((i) => !i.purchased).length > 0 && (
+                <span className="absolute -top-1 -right-2 bg-indigo-600 text-white text-[8px] font-bold w-3.5 h-3.5 rounded-full flex items-center justify-center">
+                  {groceryList.filter((i) => !i.purchased).length}
+                </span>
+              )}
+            </div>
+            <span className="text-[9px] tracking-tight mt-0.5">SHOP</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("budget")}
+            className={`flex flex-col items-center justify-center shrink-0 w-[60px] py-1 transition-all cursor-pointer ${
+              activeTab === "budget" ? "text-indigo-600 scale-105 font-bold" : "text-gray-400"
+            }`}
+          >
+            <DollarSign className="w-5 h-5" />
+            <span className="text-[9px] tracking-tight mt-0.5">BUDGET</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("community")}
+            className={`flex flex-col items-center justify-center shrink-0 w-[60px] py-1 transition-all cursor-pointer ${
+              activeTab === "community" ? "text-indigo-600 scale-105 font-bold" : "text-gray-400"
+            }`}
+          >
+            <Users className="w-5 h-5" />
+            <span className="text-[9px] tracking-tight mt-0.5">SOCIAL</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("tools")}
+            className={`flex flex-col items-center justify-center shrink-0 w-[60px] py-1 transition-all cursor-pointer ${
+              activeTab === "tools" ? "text-indigo-600 scale-105 font-bold" : "text-gray-400"
+            }`}
+          >
+            <BookOpen className="w-5 h-5" />
+            <span className="text-[9px] tracking-tight mt-0.5">TOOLS</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("profile")}
+            className={`flex flex-col items-center justify-center shrink-0 w-[60px] py-1 transition-all cursor-pointer ${
+              activeTab === "profile" ? "text-indigo-600 scale-105 font-bold" : "text-gray-400"
+            }`}
+          >
+            <ConfigIcon className="w-5 h-5" />
+            <span className="text-[9px] tracking-tight mt-0.5">PROFILE</span>
+          </button>
+
+          {isAdmin && (
+            <button
+              onClick={() => setActiveTab("admin")}
+              className={`flex flex-col items-center justify-center shrink-0 w-[60px] py-1 transition-all cursor-pointer ${
+                activeTab === "admin" ? "text-indigo-600 scale-105 font-bold" : "text-gray-400"
+              }`}
+            >
+              <Briefcase className="w-5 h-5" />
+              <span className="text-[9px] tracking-tight mt-0.5">ADMIN</span>
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* 👉 LANDMARK: Soft-Gate Modal Render */}
+      <SoftGateModal
+        isOpen={showSoftGate}
+        onClose={() => setShowSoftGate(false)}
+        featureContext={softGateContext}
+      />
 
       <style
         dangerouslySetInnerHTML={{
