@@ -5864,6 +5864,8 @@ const QUICK_TIPS_POOL = [
 
 const App = () => {
 
+  
+
 const [userId, setUserId] = useState(null);
   const [customId, setCustomId] = useState(
     localStorage.getItem("pantry_chef_custom_id") || ""
@@ -7265,7 +7267,28 @@ const handleBulkAdd = async (e) => {
       />
     );
 
-  
+  // 🛑 GLOBAL AUTH GATE: Lock down app access for unauthenticated visitors
+  if (!isDemoAuthenticated) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full bg-gray-800 rounded-lg shadow-xl p-8 text-center border border-gray-700">
+          <div className="w-16 h-16 bg-indigo-500/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <ChefHat className="w-8 h-8 text-indigo-400" />
+          </div>
+          <h1 className="text-2xl font-bold text-white mb-2">PantryChef</h1>
+          <p className="text-gray-400 text-sm mb-6">
+            Access is currently restricted. Please sign in or create an account to continue.
+          </p>
+          <button
+            onClick={() => setShowLoginModal(true)}
+            className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg transition-colors flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <LogIn className="w-4 h-4" /> Sign In / Create Account
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-screen bg-gray-50 md:ml-64 max-w-full md:max-w-none shadow-2xl overflow-hidden relative">
