@@ -273,8 +273,9 @@ const AdminRecipeIngestor = ({ db, appId, effectiveUserId, communityRecipes, set
 
       try {
         const prompt = `Analyze this recipe URL: ${currentUrl}. 
-        Extract the recipe details. Ensure instructions are formatted clearly with numbered steps (e.g. "1. ... 2. ...").
-        Extract the primary recipe image URL (og:image or high-res photo) into the 'image' field, and any video URL into 'videoUrl'.
+        Extract the recipe details. 
+        CRITICAL: Format instructions as a single text block separated by strict numbered line breaks (e.g. "1. First step...\n2. Second step...\n3. Third step..."). Do NOT combine steps into a single paragraph.
+        Extract the primary high-resolution recipe photo URL into the 'image' field, and any accompanying video link into 'videoUrl'.
         
         Return ONLY a valid JSON object matching this schema:
         {
@@ -285,12 +286,12 @@ const AdminRecipeIngestor = ({ db, appId, effectiveUserId, communityRecipes, set
           "image": "https://url-to-image.jpg",
           "videoUrl": "https://url-to-video-if-any",
           "allIngredients": [{"name": "ingredient name", "quantity": 1, "unit": "cup"}],
-          "instructions": "1. Step one instructions...\n2. Step two instructions...",
+          "instructions": "1. Step one instructions...\n2. Step two instructions...\n3. Step three instructions...",
           "sourceName": "Web Extractor",
           "sourceUrl": "${currentUrl}",
           "nutrition": {"calories": 450, "protein": "25g", "carbs": "40g", "fat": "15g"},
           "recommendedGear": []
-        }`;
+        }`;;
 
         const payload = {
           contents: [{ parts: [{ text: prompt }] }],
@@ -729,16 +730,26 @@ const fetchAIRecipes = async (
   const itemsList = pantryItems
     .map((i) => `${i.quantity || 1} ${i.unit || "unit"} ${i.name}`)
     .join(", ");
+
+  // Anti-Repeat History Context (Excludes meals cooked in the last 14 days)
+  const recentMeals = history
+    .slice(0, 10) // Look at the last 10 cooked meals
+    .map((h) => h.recipeTitle)
+    .join(", ");
+
   const historyText =
     history.length > 0
       ? `User likes: ${history.map((h) => h.recipeTitle).join(", ")}.`
       : "";
+
   const dietText = profile.diets?.length
     ? `Dietary: ${profile.diets.join(", ")}.`
     : "";
   const equipText = profile.equipment?.length
     ? `Equip: ${profile.equipment.join(", ")}.`
     : "";
+  
+
   const healthGoalsText = profile.healthGoals?.length 
     ? `Health Goals/Medical Constraints: ${profile.healthGoals.join(", ")}.` 
     : "";
@@ -751,31 +762,32 @@ const fetchAIRecipes = async (
   const householdText = profile.householdSize 
     ? `Cooking for household size: ${profile.householdSize}.` 
     : "";
+
+  // 👉 Advanced Filter Context Strings
   let filterContext = "";
-  if (filters.proteins?.length)
-    filterContext += `Must include one of: ${filters.proteins.join(", ")}. `;
-  if (filters.vegetables?.length)
-    filterContext += `Must include one of: ${filters.vegetables.join(", ")}. `;
+  if (filters.mealType && filters.mealType !== "Any") filterContext += `Meal Type: Must be suitable for ${filters.mealType}. `;
+  if (filters.maxCalories) filterContext += `Nutritional Limit: Maximum ${filters.maxCalories} calories per serving. `;
+  if (filters.proteins?.length) filterContext += `Must include one of: ${filters.proteins.join(", ")}. `;
+  if (filters.vegetables?.length) filterContext += `Must include one of: ${filters.vegetables.join(", ")}. `;
   if (filters.cuisine) filterContext += `Cuisine style: ${filters.cuisine}. `;
-  // Combine them into the AI system/user prompt string:
   let prompt = `Ingredients available: ${itemsList}. ${householdText} ${healthGoalsText} ${dislikedText} ${kidPrefText} ${dietText} ${equipText} ${filterContext} ...`;
   "";
+
   if (filters.maxTime)
     filterContext += `Max cooking time: ${filters.maxTime}. `;
   if (filters.familyMode)
     filterContext += `FAMILY MODE ACTIVE: Suggest meals with a kid-friendly adaptation using the same base ingredients. `;
+  
   if (queryText) {
-    prompt = `Search for recipes matching "${queryText}". ${filterContext} ${dietText}. User has: ${itemsList}. Try to find recipes that use these items if possible. Return 3 results. Output JSON array. Each object: title, description, prepTime, servings (int), matchPercentage (number), sourceName, sourceUrl, missingIngredients (array), allIngredients (array of name, quantity, unit), instructions, kidFriendlyVersion (string), nutrition (object with calories (int), protein (string), carbs (string), fat (string)), recommendedGear (array of string for suggested utensils/appliances), recommendedSides (array of string).`;
+    prompt = `Search for recipes matching "${queryText}". ${filterContext} ${dietText}. User has: ${itemsList}. ${historyText} Try to find recipes that use these items if possible. Return 3 results. Output JSON array. Each object: title, description, prepTime, servings (int), matchPercentage (number), sourceName, sourceUrl, missingIngredients (array), allIngredients (array of name, quantity, unit), instructions, kidFriendlyVersion (string), nutrition (object with calories (int), protein (string), carbs (string), fat (string)), recommendedGear (array of string for suggested utensils/appliances), recommendedSides (array of string).`;
   } else if (mode === "meal") {
     prompt = `Ingredients available: ${itemsList}. ${historyText} ${dietText} ${equipText} ${filterContext}
-    Suggest 3 complete meal combinations (Main Dish + Complementary Side Dish).
-    1. "Perfect Match Meal" (uses mostly owned items).
-    2. "Balanced Feast" (Main + Veggie side).
-    3. "Weekend Special" (More elaborate).
-    Output JSON array. Each object: title (e.g. "Grilled Chicken with Roasted Carrots"), description, prepTime, servings (int), matchPercentage (number), sourceName, sourceUrl, missingIngredients (array), allIngredients (array of name, quantity, unit - combined for both dishes), instructions (combined for both), kidFriendlyVersion (string), nutrition (object with calories (int), protein (string), carbs (string), fat (string)), recommendedGear (array of string).`;
+    Suggest 3 complete meal combinations (Main Dish + Complementary Side Dish). Ensure variety and avoid recently cooked dishes.
+    Output JSON array. Each object: title, description, prepTime, servings (int), matchPercentage (number), sourceName, sourceUrl, missingIngredients (array), allIngredients (array of name, quantity, unit - combined for both dishes), instructions (combined for both), kidFriendlyVersion (string), nutrition (object with calories (int), protein (string), carbs (string), fat (string)), recommendedGear (array of string).`;
   } else {
-    prompt = `Ingredients available: ${itemsList}. ${historyText} ${dietText} ${equipText} ${filterContext} Suggest 3 recipes. 1. "Perfect Match" (uses mostly owned items). 2. "Creative Stretch" (uses ~50% owned). 3. "History Inspired". Output JSON array. Each object: title, description, prepTime, servings (int), matchPercentage (number), sourceName, sourceUrl, missingIngredients (array), allIngredients (array of name, quantity, unit), instructions, kidFriendlyVersion (string), nutrition (object with calories (int), protein (string), carbs (string), fat (string)), recommendedGear (array of string for suggested utensils/appliances), recommendedSides (array of string - simple names of sides to pair with this).`;
+    prompt = `Ingredients available: ${itemsList}. ${historyText} ${dietText} ${equipText} ${filterContext} Suggest 3 recipes ensuring variety and avoiding recently cooked dishes. Output JSON array. Each object: title, description, prepTime, servings (int), matchPercentage (number), sourceName, sourceUrl, missingIngredients (array), allIngredients (array of name, quantity, unit), instructions, kidFriendlyVersion (string), nutrition (object with calories (int), protein (string), carbs (string), fat (string)), recommendedGear (array of string for suggested utensils/appliances), recommendedSides (array of string).`;
   }
+
   const payload = {
     contents: [{ parts: [{ text: prompt }] }],
     tools: [{ google_search: {} }],
@@ -783,6 +795,86 @@ const fetchAIRecipes = async (
   const responseText = await apiCall(payload);
   return parseAIResponse(responseText);
 };
+
+const handleCook = async (r) => {
+    // 👉 Prompt for personal portions eaten, supporting fractions (e.g., 1.25, 0.5)
+    const personalServingsInput = prompt(
+      `You're logging "${r.title}". How many servings did you personally eat? (Decimals/fractions allowed)`, 
+      "1"
+    );
+    const personalServings = parseFloat(personalServingsInput);
+    if (isNaN(personalServings) || personalServings <= 0) return;
+
+    const totalRecipeServings = r.servings || 4;
+    const ratio = personalServings / totalRecipeServings;
+
+    // 👉 Conditional household prompt only if household members/size > 1 are configured in profile
+    let householdEaters = [];
+    const hasHouseholdMembers = userProfile?.householdSize > 1 || (userProfile?.householdMembers && userProfile.householdMembers.length > 0);
+    
+    if (hasHouseholdMembers) {
+      const includeFamily = confirm("Did other household members share this meal?");
+      if (includeFamily) {
+        // Optional: Log remaining portions as leftover inventory or distribute to family logs
+      }
+    }
+
+    setLoading(true);
+    setStatus("Updating nutrition & inventory...");
+
+    try {
+      // Save personal nutrition intake scaled by exact fractional servings eaten
+      await addDoc(
+        collection(db, `/artifacts/${appId}/users/${effectiveUserId}/nutritionLogs`),
+        {
+          recipeTitle: r.title,
+          servingsEaten: personalServings,
+          calories: Math.round((r.nutrition?.calories || 500) * ratio),
+          protein: Math.round(parseFloat(r.nutrition?.protein || "30g") * ratio),
+          carbs: Math.round(parseFloat(r.nutrition?.carbs || "30g") * ratio),
+          fat: Math.round(parseFloat(r.nutrition?.fat || "15g") * ratio),
+          timestamp: serverTimestamp(),
+        }
+      );
+
+      // Standard cook history log for anti-repeat tracking
+      await addDoc(
+        collection(db, `/artifacts/${appId}/public/data/cookHistory`),
+        {
+          userId: effectiveUserId,
+          recipeTitle: r.title,
+          timestamp: serverTimestamp(),
+        }
+      );
+
+      // Deduct stock from pantry
+      const batch = writeBatch(db);
+      r.allIngredients?.forEach((ing) => {
+        const m = inventory.find((i) =>
+          i.name.toLowerCase().includes(ing.name.toLowerCase())
+        );
+        if (m) {
+          if (m.quantity <= 1)
+            batch.delete(doc(db, `/artifacts/${appId}/users/${effectiveUserId}/inventory`, m.id));
+          else
+            batch.update(doc(db, `/artifacts/${appId}/users/${effectiveUserId}/inventory`, m.id), {
+              quantity: m.quantity - 1,
+            });
+        }
+      });
+      await batch.commit();
+
+      setNotification(`🍎 Logged ${personalServings} serving(s) to your nutrition report!`);
+      setTimeout(() => setNotification(null), 3000);
+    } catch (err) {
+      console.error(err);
+      setNotification("❌ Error logging meal.");
+      setTimeout(() => setNotification(null), 3000);
+    }
+
+    setLoading(false);
+    setActiveRecipe(null);
+  };
 
 const generateMealPrepPlan = async (baseIngredient) => {
   const prompt = `Generate a smart meal prep plan using "${baseIngredient}" as the core. 1. Bulk Prep Instructions: How to cook 3-4lbs of ${baseIngredient} at once. 2. 3 Distinct Meals: Recipes using the prepped base. Output JSON: { "baseInstructions": "string", "shoppingList": ["string"], "meals": [ { "title": "string", "description": "string", "prepTime": "string", "ingredients": ["string"] } ] }`;
@@ -2411,6 +2503,7 @@ const RecipeCard = ({
   onToggleSave,
   onVote,
   onAuthorClick,
+  userNote,
 }) => (
   <div
     onClick={onClick}
@@ -2941,11 +3034,11 @@ const CookingMode = ({ recipe, initialServings, onClose }) => {
     });
   };
 
-  // Safe instruction parsing fallback if recipe.instructions is missing or undefined
+  // Robust instruction parser: handles explicit line breaks or fallback numeric patterns
   const rawInstructions = recipe.instructions || "1. Prepare ingredients as directed.\n2. Cook until done.";
-  const steps = rawInstructions.match(/\r\n|\n/)
-    ? rawInstructions.split(/\r\n|\n+/).filter((s) => s.trim().length > 0)
-    : rawInstructions.split(/\d+\.\s+/).filter((s) => s.trim().length > 0);
+  const steps = rawInstructions.includes("\n")
+    ? rawInstructions.split(/\r?\n/).filter((s) => s.trim().length > 0)
+    : rawInstructions.split(/(?=\d+\.\s+)/).filter((s) => s.trim().length > 0);
 
   const handleAskChef = async (e) => {
     e.preventDefault();
@@ -3157,6 +3250,10 @@ const RecipeDetailView = ({
   isSaved,
   onToggleSave,
   onVote,
+  userNote,
+  onSaveNote,
+  userProfile,
+  onUpdateEquipment,
 }) => {
   const baseServings = recipe.servings || 4;
   const [servings, setServings] = useState(baseServings);
@@ -3165,6 +3262,18 @@ const RecipeDetailView = ({
   const [selectedMissing, setSelectedMissing] = useState([]);
   const [showConverter, setShowConverter] = useState(false);
   const [ovenStatus, setOvenStatus] = useState("off");
+  const [isNoteExpanded, setIsNoteExpanded] = useState(false);
+  const [currentNote, setCurrentNote] = useState(userNote || "");
+  const [noteSavedAnim, setNoteSavedAnim] = useState(false);
+  const handleSaveAndConfirm = (id, text) => {
+    onSaveNote(id, text);
+    setNoteSavedAnim(true);
+    setTimeout(() => {
+      setNoteSavedAnim(false);
+      setIsNoteExpanded(false); // Collapse after save if desired
+    }, 2000);
+  };
+  
   const [planDay, setPlanDay] = useState("Mon");
   const [planType, setPlanType] = useState("Dinner");
   const [planTime, setPlanTime] = useState("18:00");
@@ -3200,6 +3309,9 @@ const RecipeDetailView = ({
     const scaled = (num / baseServings) * servings;
     return Number.isInteger(scaled) ? scaled : parseFloat(scaled.toFixed(2));
   };
+
+  const [showGearDrawer, setShowGearDrawer] = useState(false); // 👉 LANDMARK: Expandable gear drawer state
+  
   const toggleMissingItem = (name) => {
     if (selectedMissing.includes(name)) {
       setSelectedMissing(selectedMissing.filter((i) => i !== name));
@@ -3222,6 +3334,7 @@ const RecipeDetailView = ({
         onClose={() => setCookingMode(false)}
       />
     );
+  const authorTitle = recipe.authorName ? `${recipe.authorName}'s Recommended Equipment` : "Recommended Equipment";
   return (
     <div className="flex flex-col h-full bg-white animate-in slide-in-from-right duration-300 relative">
       {recipe.image && (
@@ -3310,6 +3423,50 @@ const RecipeDetailView = ({
       <div className="p-4 space-y-6 flex-grow overflow-auto pb-24">
         <p className="text-gray-600 text-sm italic">"{recipe.description}"</p>
 
+        {/* Private Chef Notes Editor Box */}
+        <div className="bg-amber-50/70 border border-amber-200 p-4 rounded-2xl space-y-3 shadow-2xs">
+          <div className="flex justify-between items-center cursor-pointer" onClick={() => setIsNoteExpanded(!isNoteExpanded)}>
+            <div className="flex items-center gap-2">
+              <Edit className="w-4 h-4 text-amber-600" />
+              <h4 className="text-xs font-bold text-amber-900 uppercase">My Private Chef Note</h4>
+              <span className="text-[9px] text-amber-600 font-medium hidden sm:inline">(Only visible to you)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              {userNote && !isNoteExpanded && (
+                <span className="text-[10px] text-amber-800 font-medium truncate max-w-[140px] bg-amber-100/60 px-2 py-0.5 rounded-md">
+                  "{userNote}"
+                </span>
+              )}
+              <span className="text-xs font-bold text-amber-700">{isNoteExpanded ? "▲ Hide" : "▼ Add / View"}</span>
+            </div>
+          </div>
+
+          {isNoteExpanded && (
+            <div className="space-y-2 pt-2 border-t border-amber-200/60 animate-in fade-in">
+              <textarea
+                value={currentNote}
+                onChange={(e) => setCurrentNote(e.target.value)}
+                placeholder="Add personal tweaks, e.g. 'Kids hated, Mike loved, cut salt in half...'"
+                className="w-full p-2.5 bg-white border border-amber-200 rounded-xl text-xs text-gray-800 outline-none focus:border-amber-500 resize-none h-20"
+              />
+              <div className="flex justify-between items-center">
+                {noteSavedAnim ? (
+                  <span className="text-[11px] font-bold text-emerald-600 flex items-center gap-1 animate-in fade-in">
+                    <CheckCircle className="w-3.5 h-3.5" /> Note Saved Successfully!
+                  </span>
+                ) : <span></span>}
+
+                <button
+                  onClick={() => handleSaveAndConfirm(recipe.id || recipe.firestoreId, currentNote)}
+                  className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer transition-colors"
+                >
+                  Save Note
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
         {/* NEW: Side Dishes Section */}
         {recipe.recommendedSides && recipe.recommendedSides.length > 0 && (
           <div className="bg-purple-50 p-4 rounded-xl border border-purple-100">
@@ -3326,17 +3483,67 @@ const RecipeDetailView = ({
           </div>
         )}
 
+        {/* Recommended Gear Redesign - Collapsed Accordion Tab */}
         {recipe.recommendedGear && recipe.recommendedGear.length > 0 && (
-          <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 mb-4">
-            <h4 className="text-xs font-bold text-gray-800 uppercase mb-2 flex items-center gap-2">
-              <Star className="w-3 h-3 text-yellow-500" /> Chef's Recommended
-              Gear
-            </h4>
-            <div className="space-y-1">
-              {recipe.recommendedGear.map((gear, i) => (
-                <NativeProductAd key={i} tool={gear} />
-              ))}
-            </div>
+          <div className="bg-gray-50 rounded-2xl border border-gray-200 overflow-hidden shadow-2xs">
+            <button
+              onClick={() => setShowGearDrawer(!showGearDrawer)}
+              className="w-full p-3.5 flex items-center justify-between bg-gray-100/70 hover:bg-gray-100 transition-colors text-left cursor-pointer"
+            >
+              <div className="flex items-center gap-2">
+                <Star className="w-4 h-4 text-indigo-600" />
+                <span className="text-xs font-bold text-gray-800 uppercase">
+                  {authorTitle} ({recipe.recommendedGear.length})
+                </span>
+              </div>
+              <span className="text-xs font-bold text-indigo-600">
+                {showGearDrawer ? "Hide ▲" : "View Gear ▼"}
+              </span>
+            </button>
+
+            {showGearDrawer && (
+              <div className="p-3 space-y-2 border-t border-gray-200 bg-white animate-in fade-in max-h-48 overflow-y-auto">
+                {recipe.recommendedGear.map((gearName, i) => {
+                  const userHasEquipment = (userProfile?.equipment || []).some(
+                    (eq) => eq.toLowerCase() === gearName.toLowerCase()
+                  );
+
+                  return (
+                    <div key={i} className="bg-gray-50 p-2.5 rounded-xl border border-gray-200 flex items-center justify-between">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="w-7 h-7 bg-indigo-50 text-indigo-600 rounded-lg flex items-center justify-center text-xs shrink-0">
+                          🛠️
+                        </div>
+                        <p className="text-xs font-bold text-gray-900 truncate">{gearName}</p>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {userHasEquipment ? (
+                          <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold px-2 py-0.5 rounded-lg flex items-center gap-1">
+                            <CheckCircle className="w-3 h-3" /> Have It
+                          </span>
+                        ) : (
+                          <>
+                            <button
+                              onClick={() => onUpdateEquipment(gearName)}
+                              className="bg-gray-100 hover:bg-gray-200 text-gray-700 text-[10px] font-bold px-2 py-1 rounded-lg transition-colors cursor-pointer"
+                            >
+                              Have It
+                            </button>
+                            <button
+                              onClick={() => window.open(`https://www.amazon.com/s?k=${encodeURIComponent(gearName)}`, "_blank")}
+                              className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-xs transition-colors cursor-pointer flex items-center gap-1"
+                            >
+                              <ShoppingCart className="w-3 h-3" /> Buy
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
         {ovenTemp && (
@@ -3714,9 +3921,25 @@ const AdminDashboard = ({
   effectiveUserId,
   communityRecipes,
   setActiveTab,
+  isAdmin,
 }) => {
   const [adminView, setAdminView] = useState("impact");
   const [feedbackLogs, setFeedbackLogs] = useState([]);
+  const [visitorLogs, setVisitorLogs] = useState([]);
+
+  // Fetch visitors automatically for the Admin
+  useEffect(() => {
+    if (!db || !isAdmin) return;
+    const q = query(
+      collection(db, `/artifacts/${appId}/public/data/visitorLogs`),
+      orderBy("lastLogin", "desc"),
+      limit(50)
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setVisitorLogs(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, [db, isAdmin]);
 
   // Fetch feedback automatically for the Admin
   useEffect(() => {
@@ -3804,6 +4027,14 @@ const AdminDashboard = ({
                 <span className="bg-red-500 text-white px-1 rounded-full text-[8px]">{feedbackLogs.length}</span>
               )}
             </button>
+            <button
+              onClick={() => setAdminView("visitors")}
+              className={`px-2 py-1 rounded text-[10px] font-bold ${
+                adminView === "visitors" ? "bg-indigo-600" : "bg-gray-800 cursor-pointer"
+              }`}
+            >
+              Visitors ({visitorLogs.length})
+            </button>
           </div>
         </div>
 
@@ -3868,6 +4099,26 @@ const AdminDashboard = ({
           </div>
         )}
 
+        {adminView === "visitors" && (
+          <div className="space-y-3 animate-in fade-in max-h-96 overflow-y-auto pr-2">
+            {visitorLogs.length === 0 ? (
+              <p className="text-xs text-gray-500 text-center py-4">No visitor logs recorded yet.</p>
+            ) : (
+              visitorLogs.map((visitor) => (
+                <div key={visitor.id} className="bg-white/5 p-3 rounded-xl border border-white/10 flex justify-between items-center">
+                  <div>
+                    <p className="text-xs font-bold text-white">{visitor.displayName} ({visitor.email})</p>
+                    <p className="text-[9px] text-gray-400 font-mono">UID: {visitor.uid}</p>
+                  </div>
+                  <span className="text-[9px] text-indigo-300">
+                    {visitor.lastLogin?.toDate ? visitor.lastLogin.toDate().toLocaleString() : "Just now"}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
         {adminView === "users" && (
           <div className="mt-4 space-y-2 animate-in fade-in">
             <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">
@@ -3888,10 +4139,12 @@ const AdminDashboard = ({
           </div>
         )}
 
+        
+
         {/* NEW: Feedback Viewer */}
         {adminView === "feedback" && (
           <div className="space-y-3 animate-in fade-in max-h-96 overflow-y-auto pr-2 scrollbar-hide">
-            {feedbackLogs.length === 0 ? (
+          {feedbackLogs.length === 0 ? (
               <p className="text-xs text-gray-500 text-center py-4">No feedback submitted yet.</p>
             ) : (
               feedbackLogs.map((fb) => (
@@ -3914,7 +4167,7 @@ const AdminDashboard = ({
           </div>
         )}
       </div>
-
+        
       <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
         <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
           <UserCircle className="w-4 h-4 text-purple-600" /> User Simulator
@@ -3967,6 +4220,8 @@ const AdminDashboard = ({
         </div>
       </div>
     </div>
+
+    
   );
 };
 
@@ -4087,38 +4342,80 @@ const handleProtectedPreferenceChange = (contextLabel, callback) => {
             </div>
           )}
 
-          {/* 2. My Profile & Avatar */}
-          <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 text-center ${!isDemoAuthenticated ? "opacity-50 pointer-events-none filter blur-sm select-none" : ""}`}>
-            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2 justify-center">
-              <UserCircle className="w-5 h-5 text-indigo-600" /> My Profile & Preferences
-            </h3>
-            <label className="cursor-pointer inline-block relative">
-              <div className="w-24 h-24 rounded-full bg-gray-100 flex items-center justify-center overflow-hidden border-2 border-dashed border-gray-300 mx-auto">
-                {profileImage ? (
-                  <img src={profileImage} alt="Me" className="w-full h-full object-cover" />
-                ) : (
-                  <Scan className="w-8 h-8 text-gray-400" />
-                )}
+          {/* 2. My Profile & Account Details Card */}
+          <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-6 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none filter blur-sm select-none" : ""}`}>
+            
+            {/* Header */}
+            <div className="flex items-center gap-2 border-b border-gray-100 pb-4">
+              <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                <UserCircle className="w-5 h-5" />
               </div>
-              <div className="absolute bottom-0 right-0 bg-indigo-600 p-2 rounded-full text-white">
-                <Plus className="w-3 h-3" />
+              <div>
+                <h3 className="font-black text-gray-900 text-sm">My Profile & Preferences</h3>
+                <p className="text-[10px] text-gray-400">Manage your public chef identity and account credentials</p>
               </div>
-              <input type="file" accept="image/*" onChange={handleProfileImageSelect} className="hidden" disabled={!isDemoAuthenticated} />
-            </label>
-            <div className="text-left mt-6 pt-4 border-t border-gray-100">
-              <label className="text-xs font-bold text-gray-500 mb-1 flex items-center gap-1">
-                <MapPin className="w-3 h-3" /> Zip Code
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. 90210"
-                className="w-full p-3 bg-gray-50 rounded-xl text-sm outline-none border border-gray-200 focus:border-indigo-600 transition-all"
-                value={localProfile.zipCode || ""}
-                onChange={(e) => setLocalProfile({ ...localProfile, zipCode: e.target.value })}
-                maxLength={5}
-                disabled={!isDemoAuthenticated}
-              />
             </div>
+
+            {/* Avatar Upload Area */}
+            <div className="flex flex-col items-center justify-center text-center">
+              <label className="cursor-pointer inline-block relative group">
+                <div className="w-24 h-24 rounded-full bg-gray-50 flex items-center justify-center overflow-hidden border-2 border-dashed border-gray-300 group-hover:border-indigo-500 transition-colors mx-auto shadow-inner">
+                  {profileImage ? (
+                    <img src={profileImage} alt="Me" className="w-full h-full object-cover" />
+                  ) : (
+                    <Scan className="w-8 h-8 text-gray-400 group-hover:text-indigo-500 transition-colors" />
+                  )}
+                </div>
+                <div className="absolute bottom-0 right-0 bg-indigo-600 p-2 rounded-full text-white shadow-md">
+                  <Plus className="w-3 h-3" />
+                </div>
+                <input type="file" accept="image/*" onChange={handleProfileImageSelect} className="hidden" disabled={!isDemoAuthenticated} />
+              </label>
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-2">Tap to change avatar</span>
+            </div>
+
+            {/* Account Details Inputs */}
+            <div className="space-y-4 pt-2 border-t border-gray-100">
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Display Name</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Chef Ishon"
+                  className="w-full p-3 bg-gray-50 rounded-2xl text-xs outline-none border border-gray-200 focus:border-indigo-600 focus:bg-white transition-all font-medium text-gray-800"
+                  value={localProfile.name || ""}
+                  onChange={(e) => setLocalProfile({ ...localProfile, name: e.target.value })}
+                  disabled={!isDemoAuthenticated}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Email Address</label>
+                <input
+                  type="email"
+                  placeholder="you@example.com"
+                  className="w-full p-3 bg-gray-50 rounded-2xl text-xs outline-none border border-gray-200 focus:border-indigo-600 focus:bg-white transition-all font-medium text-gray-800"
+                  value={localProfile.email || ""}
+                  onChange={(e) => setLocalProfile({ ...localProfile, email: e.target.value })}
+                  disabled={!isDemoAuthenticated}
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
+                  <MapPin className="w-3 h-3 text-indigo-500" /> Zip Code (For Local Grocery Deals)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 90210"
+                  className="w-full p-3 bg-gray-50 rounded-2xl text-xs outline-none border border-gray-200 focus:border-indigo-600 focus:bg-white transition-all font-medium text-gray-800"
+                  value={localProfile.zipCode || ""}
+                  onChange={(e) => setLocalProfile({ ...localProfile, zipCode: e.target.value })}
+                  maxLength={5}
+                  disabled={!isDemoAuthenticated}
+                />
+              </div>
+            </div>
+
           </div>
           
           {/* 3. AI Usage */}
@@ -4170,8 +4467,14 @@ const handleProtectedPreferenceChange = (contextLabel, callback) => {
             </div>
           )}
 
-
-          {/* 5. Simulate Notifications */}
+          {/* 👉 ONLY SHOWN TO APPROVED ADMIN / OWNER */}
+          {isAdmin && (
+            <div className="bg-gray-900 p-4 rounded-3xl shadow-sm border border-gray-800 text-white space-y-4">
+              <h3 className="font-bold text-sm flex items-center gap-2">
+                <Briefcase className="w-4 h-4 text-indigo-400" /> Admin & Tester Controls (Approved Only)
+              </h3>
+              
+              {/* 5. Simulate Notifications */}
           <div className="bg-gray-900 p-4 rounded-3xl shadow-sm border border-gray-800">
             <h3 className="font-bold text-white text-sm mb-3 flex items-center gap-2">
               <Bell className="w-4 h-4 text-indigo-400" /> Simulate Notifications (Pitch Mode)
@@ -4216,17 +4519,6 @@ const handleProtectedPreferenceChange = (contextLabel, callback) => {
             </button>
           </div>
 
-          {/* 8. Go Pro */}
-          <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-4 rounded-3xl shadow-lg text-white">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="font-bold flex items-center gap-2"><Crown className="w-5 h-5 text-yellow-300" /> Go Pro</h3>
-              <span className="bg-white/20 px-2 py-1 rounded text-[10px] font-bold">BEST VALUE</span>
-            </div>
-            <button onClick={() => window.dispatchEvent(new CustomEvent("openSubscription"))} className="w-full py-2 bg-white text-indigo-600 rounded-xl text-xs font-bold shadow-sm cursor-pointer">
-              Upgrade Now
-            </button>
-          </div>
-
           {/* 9. API Configuration */}
           <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
             <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
@@ -4250,6 +4542,29 @@ const handleProtectedPreferenceChange = (contextLabel, callback) => {
               {isAdmin ? "Active" : "Enable"}
             </button>
           </div>
+          
+              
+
+              
+              
+            </div>
+          )}
+
+
+          
+
+          {/* 8. Go Pro */}
+          <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-4 rounded-3xl shadow-lg text-white">
+            <div className="flex justify-between items-center mb-2">
+              <h3 className="font-bold flex items-center gap-2"><Crown className="w-5 h-5 text-yellow-300" /> Go Pro</h3>
+              <span className="bg-white/20 px-2 py-1 rounded text-[10px] font-bold">BEST VALUE</span>
+            </div>
+            <button onClick={() => window.dispatchEvent(new CustomEvent("openSubscription"))} className="w-full py-2 bg-white text-indigo-600 rounded-xl text-xs font-bold shadow-sm cursor-pointer">
+              Upgrade Now
+            </button>
+          </div>
+
+          
 
           {/* 11. Dietary Preferences */}
           <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""}`}>
@@ -4276,7 +4591,7 @@ const handleProtectedPreferenceChange = (contextLabel, callback) => {
               <ChefHat className="w-5 h-5 text-indigo-600" /> Cuisine Preferences (Match Weighting)
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {Object.keys(localProfile.cuisinePreferences || { Mexican: 3, Italian: 3, "Soul Food": 3, American: 3, Asian: 2, Mediterranean: 2 }).map((cuisine) => {
+              {Object.keys(localProfile.cuisinePreferences || { American: 3, "Soul Food": 4, Mexican: 3, Italian: 3, Asian: 3, Indian: 3, Mediterranean: 3, Thai: 3, Caribbean: 3, French: 3, Chinese: 3, Greek: 3, German: 3, Filipino: 3, Japanese: 3 }).map((cuisine) => {
                 const currentVal = (localProfile.cuisinePreferences || {})[cuisine] || 3;
                 return (
                   <div key={cuisine} className="space-y-1 bg-gray-50 p-3 rounded-2xl border border-gray-100">
@@ -4291,7 +4606,7 @@ const handleProtectedPreferenceChange = (contextLabel, callback) => {
                       value={currentVal}
                       onChange={(e) => {
                         const updatedPrefs = {
-                          ...(localProfile.cuisinePreferences || { Mexican: 3, Italian: 3, "Soul Food": 3, American: 3, Asian: 2, Mediterranean: 2 }),
+                          ...(localProfile.cuisinePreferences || { American: 3, "Soul Food": 4, Mexican: 3, Italian: 3, Asian: 3, Indian: 3, Mediterranean: 3, Thai: 3, Caribbean: 3, French: 3, Chinese: 3, Greek: 3, German: 3, Filipino: 3, Japanese: 3 }),
                           [cuisine]: parseInt(e.target.value)
                         };
                         setLocalProfile({ ...localProfile, cuisinePreferences: updatedPrefs });
@@ -4393,6 +4708,112 @@ const handleProtectedPreferenceChange = (contextLabel, callback) => {
           )}
         </div>
       
+    </div>
+  );
+};
+
+const NutritionReportView = ({ nutritionLogs, onDeleteLog, userProfile }) => {
+  const [timeframe, setTimeframe] = useState("week"); // 'week' or 'month'
+
+  const now = new Date();
+  const daysLimit = timeframe === "week" ? 7 : 30;
+  const cutoff = new Date(now.setDate(now.getDate() - daysLimit));
+
+  const filteredLogs = nutritionLogs.filter((log) => {
+    const logDate = log.timestamp?.toDate ? log.timestamp.toDate() : new Date();
+    return logDate >= cutoff;
+  });
+
+  const totalCals = filteredLogs.reduce((sum, item) => sum + (item.calories || 0), 0);
+  const totalProtein = filteredLogs.reduce((sum, item) => sum + (item.protein || 0), 0);
+  const totalCarbs = filteredLogs.reduce((sum, item) => sum + (item.carbs || 0), 0);
+  const totalFat = filteredLogs.reduce((sum, item) => sum + (item.fat || 0), 0);
+
+  const avgCals = Math.round(totalCals / daysLimit);
+  const avgProtein = Math.round(totalProtein / daysLimit);
+
+  const targetCals = userProfile?.targetCalories || 2000;
+  const targetProtein = userProfile?.targetProtein || 150;
+
+  return (
+    <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm space-y-5">
+      <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+        <div>
+          <h3 className="font-black text-gray-900 text-sm flex items-center gap-2">
+            📊 Cooked Nutrition Analytics
+          </h3>
+          <p className="text-[10px] text-gray-400">Aggregated from in-app cooked meals</p>
+        </div>
+
+        <div className="flex bg-gray-100 p-0.5 rounded-xl text-[10px] font-bold">
+          <button
+            onClick={() => setTimeframe("week")}
+            className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+              timeframe === "week" ? "bg-white shadow text-indigo-600" : "text-gray-500"
+            }`}
+          >
+            7 Days
+          </button>
+          <button
+            onClick={() => setTimeframe("month")}
+            className={`px-3 py-1 rounded-lg transition-all cursor-pointer ${
+              timeframe === "month" ? "bg-white shadow text-indigo-600" : "text-gray-500"
+            }`}
+          >
+            30 Days
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="bg-amber-50/70 p-3 rounded-2xl border border-amber-100">
+          <p className="text-[9px] font-bold text-amber-700 uppercase">Avg Daily Calories</p>
+          <p className="text-lg font-black text-amber-950 mt-0.5">{avgCals} <span className="text-xs font-normal">kcal</span></p>
+        </div>
+        <div className="bg-indigo-50/70 p-3 rounded-2xl border border-indigo-100">
+          <p className="text-[9px] font-bold text-indigo-700 uppercase">Avg Daily Protein</p>
+          <p className="text-lg font-black text-indigo-950 mt-0.5">{avgProtein}g</p>
+        </div>
+        <div className="bg-emerald-50/70 p-3 rounded-2xl border border-emerald-100">
+          <p className="text-[9px] font-bold text-emerald-700 uppercase">Total Carbs</p>
+          <p className="text-lg font-black text-emerald-950 mt-0.5">{totalCarbs}g</p>
+        </div>
+        <div className="bg-purple-50/70 p-3 rounded-2xl border border-purple-100">
+          <p className="text-[9px] font-bold text-purple-700 uppercase">Total Fats</p>
+          <p className="text-lg font-black text-purple-950 mt-0.5">{totalFat}g</p>
+        </div>
+      </div>
+
+      <div className="space-y-2">
+        <h4 className="text-xs font-bold text-gray-800 uppercase">Logged Meals ({filteredLogs.length})</h4>
+        {filteredLogs.length === 0 ? (
+          <p className="text-xs text-gray-400 italic bg-gray-50 p-4 rounded-2xl text-center">
+            No cooked meals logged for this timeframe yet.
+          </p>
+        ) : (
+          <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+            {filteredLogs.map((log) => (
+              <div
+                key={log.id}
+                className="bg-gray-50 p-3 rounded-xl border border-gray-200 flex items-center justify-between"
+              >
+                <div>
+                  <p className="text-xs font-bold text-gray-900">{log.recipeTitle}</p>
+                  <p className="text-[10px] text-gray-500">
+                    Eaten: <span className="font-bold text-gray-700">{log.servingsEaten} serving(s)</span> • {log.calories} kcal
+                  </p>
+                </div>
+                <button
+                  onClick={() => onDeleteLog(log.id)}
+                  className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -4683,7 +5104,7 @@ const DuplicateUrlModal = ({ matchData, onClose, onViewExisting, onForceUpload }
   );
 };
 
-const DynamicHeaderBanner = ({ activeTab, userProfile, isDemoAuthenticated, onNavigateProfile }) => {
+const DynamicHeaderBanner = ({ activeTab, userProfile, isDemoAuthenticated, onNavigateProfile, setActiveTab }) => {
   // Variations for each tab
   const tabMessages = {
     pantry: [
@@ -4736,7 +5157,7 @@ const DynamicHeaderBanner = ({ activeTab, userProfile, isDemoAuthenticated, onNa
       <div 
         onClick={() => {
           onNavigateProfile();
-          setToolsActiveTab("profile"); // Drops them straight into My Settings
+          setActiveTab && setActiveTab("profile"); // Drops them straight into My Settings
         }}
         className="flex items-center gap-2.5 group cursor-pointer bg-gray-50 hover:bg-gray-100 px-3 py-1.5 rounded-2xl border border-gray-200/80 transition-all"
         title="View Profile Settings"
@@ -4787,12 +5208,21 @@ const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, on
   const [selectedDiets, setSelectedDiets] = useState([]);
   const [selectedEquipment, setSelectedEquipment] = useState([]);
   const [cuisinePreferences, setCuisinePreferences] = useState({
+    American: 3,
+    "Soul Food": 4,
     Mexican: 3,
     Italian: 3,
-    "Soul Food": 3,
-    American: 3,
-    Asian: 2,
-    Mediterranean: 2
+    Asian: 3,
+    Indian: 3,
+    Mediterranean: 3,
+    Thai: 3,          
+    Caribbean: 3,     
+    French: 3,
+    Chinese: 3,
+    Greek: 3,
+    German: 3,
+    Filipino: 3,
+    Japanese: 3
   });
 
   // Frame 4: Pantry Seeding
@@ -5438,6 +5868,30 @@ const [userId, setUserId] = useState(null);
   const [customId, setCustomId] = useState(
     localStorage.getItem("pantry_chef_custom_id") || ""
   );
+
+  const effectiveUserId = customId.trim() || userId;
+
+  // 👉 Group New Feature States Here
+  const [recipeNotes, setRecipeNotes] = useState({});
+  const [nutritionLogs, setNutritionLogs] = useState([]);
+  const [activeFilters, setActiveFilters] = useState({
+    proteins: [],
+    vegetables: [],
+    cuisine: "",
+    mealType: "Any",
+    maxCalories: 800,
+    maxCost: 20,
+    ignoreHistory: false,
+  });
+
+  // 👉 Group Real-Time Listeners Here
+  useEffect(() => {
+    // recipeNotes onSnapshot listener...
+  }, [effectiveUserId, db]);
+
+  useEffect(() => {
+    // nutritionLogs onSnapshot listener...
+  }, [effectiveUserId, db]);
   
   // 👉 LANDMARK: Dynamic Rotating Quick Tips with Auto-Rotate & Hover State (#64)
   const [currentTip, setCurrentTip] = useState(() => {
@@ -5468,7 +5922,7 @@ const [userId, setUserId] = useState(null);
     return () => clearInterval(interval);
   }, [currentTip, isTipPaused]);
   
-  const effectiveUserId = customId.trim() || userId;
+  
   
   // 🚀 NATIVE ROUTER: Syncs activeTab with URL & Browser Back Button
   const [activeTab, setActiveTabState] = useState(() => {
@@ -5526,12 +5980,21 @@ const [userId, setUserId] = useState(null);
     diets: [],
     equipment: [],
     cuisinePreferences: {
+      American: 3,
+      "Soul Food": 4,
       Mexican: 3,
       Italian: 3,
-      "Soul Food": 3,
-      American: 3,
-      Asian: 2,
-      Mediterranean: 2
+      Asian: 3,
+      Indian: 3,
+      Mediterranean: 3,
+      Thai: 3,          
+      Caribbean: 3,     
+      French: 3,
+      Chinese: 3,
+      Greek: 3,
+      German: 3,
+      Filipino: 3,
+      Japanese: 3
     },
     // NEW: Taste Profile & Persona Engine Fields
     healthGoals: [], // e.g., "Weight Loss", "Mass-Building", "Pregnancy", "Diabetes-Friendly"
@@ -5543,10 +6006,7 @@ const [userId, setUserId] = useState(null);
   });
   const [notification, setNotification] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilters, setActiveFilters] = useState({
-    proteins: [],
-    vegetables: [],
-  });
+  
   const [aiRecipes, setAiRecipes] = useState([]);
   const [activeRecipe, setActiveRecipe] = useState(null);
   const [cookingMode, setCookingMode] = useState(false);
@@ -5556,9 +6016,11 @@ const [userId, setUserId] = useState(null);
   const [newItemCategory, setNewItemCategory] = useState("Other");
   const [newItemUnit, setNewItemUnit] = useState("pcs");
   const [newItemQty, setNewItemQty] = useState(1);
+  const [newItemExpiryDays, setNewItemExpiryDays] = useState(7);
   // 👉 ADDED FOR MULTILINE BULK IMPORT
 const [quickAddTab, setQuickAddTab] = useState("single"); // 'single' or 'bulk'
 const [bulkText, setBulkText] = useState("");
+const [showAddDrawer, setShowAddDrawer] = useState(false); // Mobile Add Drawer Visibility State
 
 const handleBulkAdd = async (e) => {
   e?.preventDefault();
@@ -5687,8 +6149,21 @@ const handleBulkAdd = async (e) => {
     }
   };
 
+  const handleUpdateEquipment = async (gearName) => {
+    const currentEquip = userProfile.equipment || [];
+    if (currentEquip.includes(gearName)) return;
 
-// NEW: URL Recipe Ingestor Logic
+    const updatedEquip = [...currentEquip, gearName];
+    const updatedProfile = { ...userProfile, equipment: updatedEquip };
+    
+    setUserProfile(updatedProfile);
+    await handleSaveProfile(updatedProfile);
+    
+    setNotification(`🛠️ Added "${gearName}" to your kitchen equipment!`);
+    setTimeout(() => setNotification(null), 3000);
+  };
+
+  // NEW: URL Recipe Ingestor Logic
   // State to manage the duplicate prompt modal
   const [duplicateMatch, setDuplicateMatch] = useState(null);
   const [pendingDuplicateUrl, setPendingDuplicateUrl] = useState("");
@@ -5830,10 +6305,27 @@ const handleBulkAdd = async (e) => {
   }, []);
 
   // Trigger Onboarding on Login if Not Completed
-  const handleLogin = () => {
+  const handleLogin = async () => {
     setShowLoginModal(false);
     setIsDemoAuthenticated(true);
     
+    // 👉 Log visitor session to Firestore for tracking who accesses the app
+    if (auth?.currentUser && db) {
+      try {
+        await addDoc(collection(db, `/artifacts/${appId}/public/data/visitorLogs`), {
+          uid: auth.currentUser.uid,
+          email: auth.currentUser.email || "Google/Email User",
+          displayName: auth.currentUser.displayName || "Chef",
+          lastLogin: serverTimestamp(),
+          userAgent: navigator.userAgent
+        });
+      } catch (err) {
+        console.error("Failed to log visitor session:", err);
+      }
+    }
+
+
+
     if (!localStorage.getItem("pantry_chef_onboarded")) {
       setShowOnboarding(true);
     }
@@ -5857,13 +6349,23 @@ const handleBulkAdd = async (e) => {
       });
     }
     
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user && !user.isAnonymous) {
         setUserId(user.uid);
         setIsDemoAuthenticated(true);
-        // Automatically drop into the admin role
-        if (user.email === "ishon.jones@gmail.com") {
-          setIsAdmin(true);
+
+      try {
+          // 👉 Pull the fresh token with custom claims from the server
+          const tokenResult = await user.getIdTokenResult(true);
+          
+          if (tokenResult.claims.admin === true) {
+            setIsAdmin(true);
+          } else {
+            setIsAdmin(false);
+          }
+        } catch (err) {
+          console.error("Failed to verify admin claims:", err);
+          setIsAdmin(false);
         }
       } else {
         setUserId(user ? user.uid : null);
@@ -5871,6 +6373,7 @@ const handleBulkAdd = async (e) => {
         setIsAdmin(false);
         if (!user) initAuth();
       }
+
     });
     
     const handleAdminToggle = (e) => setIsAdmin(e.detail);
@@ -6119,6 +6622,35 @@ const handleBulkAdd = async (e) => {
     await batch.commit();
     alert("Community & Demo Users Seeded!");
   };
+
+  // 👉 LANDMARK: Real-time listener for private user recipe notes
+  useEffect(() => {
+    if (!effectiveUserId || !db) return;
+    const unsub = onSnapshot(
+      collection(db, `/artifacts/${appId}/users/${effectiveUserId}/recipeNotes`),
+      (snapshot) => {
+        const notesMap = {};
+        snapshot.docs.forEach((doc) => {
+          notesMap[doc.id] = doc.data().noteText;
+        });
+        setRecipeNotes(notesMap);
+      }
+    );
+    return () => unsub();
+  }, [effectiveUserId, db]);
+
+  // Handler to save a private note for a recipe
+  const handleSaveRecipeNote = async (recipeId, noteText) => {
+    if (!recipeId) return;
+    const noteRef = doc(db, `/artifacts/${appId}/users/${effectiveUserId}/recipeNotes`, recipeId);
+    await setDoc(noteRef, {
+      noteText: noteText,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+    setNotification("📝 Private recipe note saved!");
+    setTimeout(() => setNotification(null), 2500);
+  };
+
   const purgeTestData = async () => {
     if (!db) return alert("Database not connected.");
     const q = query(
@@ -6169,7 +6701,7 @@ const handleBulkAdd = async (e) => {
         name: newItemName.trim(),
         quantity: newItemQty,
         unit: newItemUnit,
-        expiryDate: getTimestampInDays(7),
+        expiryDate: getTimestampInDays(newItemExpiryDays),
         category: newItemCategory,
         timestamp: serverTimestamp(),
       });
@@ -6338,45 +6870,19 @@ const handleBulkAdd = async (e) => {
     setStatus("Generating...");
     try {
       let res = [];
-      if (
-        mode === "recipe" &&
-        searchQuery &&
-        !activeFilters.proteins.length &&
-        !activeFilters.vegetables.length &&
-        !activeFilters.cuisine
-      ) {
-        setStatus("Searching Database...");
-        res = await fetchMealDBRecipes(searchQuery);
-        if (res.length === 0) {
-          setStatus("Checking Gemini...");
-          res = await fetchAIRecipes(
-            inventory,
-            cookHistory,
-            userProfile,
-            searchQuery,
-            activeFilters,
-            mode
-          );
-        }
-      } else {
-        setStatus(
-          mode === "meal"
-            ? "Planning Full Meal..."
-            : "Consulting Chef Gemini..."
-        );
-        res = await fetchAIRecipes(
-          inventory,
-          cookHistory,
-          userProfile,
-          searchQuery,
-          activeFilters,
-          mode
-        );
-      }
+      // Pass activeFilters and cookHistory into fetchAIRecipes
+      res = await fetchAIRecipes(
+        inventory,
+        activeFilters.ignoreHistory ? [] : cookHistory, // 👉 Bypasses anti-repeat history if checkbox is checked!
+        userProfile,
+        searchQuery,
+        activeFilters,
+        mode
+      );
+      
       const processedRecipes = processRecipesAgainstInventory(res);
       setAiRecipes(processedRecipes.map((r) => ({ ...r, isAI: !r.isDB })));
       setRecipeView("discover");
-      await logAnalyticsEvent("recipes_generated", { mode, count: res.length });
     } catch (err) {
       console.error(err);
       setStatus("AI Error: " + (err.message || "Unknown"));
@@ -6385,46 +6891,7 @@ const handleBulkAdd = async (e) => {
     setLoading(false);
   };
 
-  const handleCook = async (r) => {
-    setLoading(true);
-    setStatus("Updating...");
-    await addDoc(
-      collection(db, `/artifacts/${appId}/public/data/cookHistory`),
-      {
-        userId: effectiveUserId,
-        recipeTitle: r.title,
-        timestamp: serverTimestamp(),
-      }
-    );
-    const batch = writeBatch(db);
-    r.allIngredients?.forEach((ing) => {
-      const m = inventory.find((i) =>
-        i.name.toLowerCase().includes(ing.name.toLowerCase())
-      );
-      if (m) {
-        if (m.quantity <= 1)
-          batch.delete(
-            doc(
-              db,
-              `/artifacts/${appId}/users/${effectiveUserId}/inventory`,
-              m.id
-            )
-          );
-        else
-          batch.update(
-            doc(
-              db,
-              `/artifacts/${appId}/users/${effectiveUserId}/inventory`,
-              m.id
-            ),
-            { quantity: m.quantity - 1 }
-          );
-      }
-    });
-    await batch.commit();
-    setLoading(false);
-    setActiveRecipe(null);
-  };
+  
   const handleAddToPlan = async (recipe, day, type, time, prepTime) => {
     await addDoc(
       collection(db, `/artifacts/${appId}/users/${effectiveUserId}/mealPlan`),
@@ -6444,6 +6911,14 @@ const handleBulkAdd = async (e) => {
     deleteDoc(
       doc(db, `/artifacts/${appId}/users/${effectiveUserId}/mealPlan`, id)
     );
+  
+  // Handler to delete a mislogged entry from nutrition history
+  const handleDeleteNutritionLog = async (logId) => {
+    await deleteDoc(doc(db, `/artifacts/${appId}/users/${effectiveUserId}/nutritionLogs`, logId));
+    setNotification("🗑️ Log entry removed.");
+    setTimeout(() => setNotification(null), 2500);
+  };
+  
   const toggleFilter = (category, item) => {
     setActiveFilters((prev) => {
       const current = prev[category] || [];
@@ -6756,6 +7231,10 @@ const handleBulkAdd = async (e) => {
         isSaved={savedRecipes.some((r) => r.title === activeRecipe.title)}
         onToggleSave={handleToggleSave}
         onVote={handleVote}
+        userNote={recipeNotes[activeRecipe.id || activeRecipe.firestoreId]}
+        onSaveNote={handleSaveRecipeNote}
+        userProfile={userProfile}
+        onUpdateEquipment={handleUpdateEquipment}
       />
     );
   if (viewingProfile)
@@ -6808,6 +7287,7 @@ const handleBulkAdd = async (e) => {
             userProfile={userProfile} 
             isDemoAuthenticated={isDemoAuthenticated}
             onNavigateProfile={() => setActiveTab("profile")}
+            setActiveTab={setActiveTab}
           />
         </div>
 
@@ -6819,6 +7299,7 @@ const handleBulkAdd = async (e) => {
               userProfile={userProfile} 
               isDemoAuthenticated={isDemoAuthenticated}
               onNavigateProfile={() => setActiveTab("profile")}
+              setActiveTab={setActiveTab}
             />
           </div>
 
@@ -6887,15 +7368,18 @@ const handleBulkAdd = async (e) => {
 
       <div className="flex-grow overflow-y-auto p-4 space-y-6 pb-28">
         {activeTab === "pantry" && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-2 md:p-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-2 md:p-6 pb-24 md:pb-6 relative">
             
             {/* LEFT WORKSPACE (Takes 2 columns) */}
-            <div className="md:col-span-2 space-y-4">
-              {/* Profile Reminder Banner */}
-              <IncompleteProfileBanner
-                profile={userProfile}
-                onCompleteProfile={() => setActiveTab("profile")}
-              />
+    <div className="md:col-span-2 space-y-4">
+      {/* Profile Reminder Banner */}
+      <IncompleteProfileBanner
+        profile={userProfile}
+        onCompleteProfile={() => setActiveTab("profile")}
+      />
+
+              
+
               {/* Receipt Scan & Voice Input Header Row */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
                 <label className="bg-indigo-600 rounded-2xl p-4 text-white shadow-xl relative overflow-hidden active:scale-95 transition-all cursor-pointer flex flex-col items-center justify-center text-center">
@@ -6914,100 +7398,290 @@ const handleBulkAdd = async (e) => {
                 </div>
               </div>
 
-              {/* Quick Add / Multiline Importer Container */}
-              <div className="bg-white rounded-2xl p-4 border border-gray-200 shadow-sm mb-4">
-                <div className="flex justify-between items-center mb-3 border-b border-gray-100 pb-2">
-                  <div className="flex items-center gap-2">
-                    <Plus className="w-5 h-5 text-indigo-600" />
-                    <span className="font-bold text-xs text-gray-800 uppercase">Add Inventory</span>
-                  </div>
-                  
-                  {/* Mode Switcher */}
-                  <div className="flex bg-gray-100 p-0.5 rounded-lg text-[10px] font-bold">
-                    <button
-                      type="button"
-                      onClick={() => setQuickAddTab("single")}
-                      className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                        quickAddTab === "single" ? "bg-white shadow text-indigo-600" : "text-gray-500"
-                      }`}
-                    >
-                      Single Item
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setQuickAddTab("bulk")}
-                      className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
-                        quickAddTab === "bulk" ? "bg-white shadow text-indigo-600" : "text-gray-500"
-                      }`}
-                    >
-                      📋 Multiline Paste
-                    </button>
-                  </div>
-                </div>
 
-                {quickAddTab === "single" ? (
-                  <form onSubmit={handleAddManual} className="space-y-2">
-                    <input
-                      value={newItemName}
-                      onChange={(e) => setNewItemName(e.target.value)}
-                      placeholder="Add item name..."
-                      className="w-full p-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:border-indigo-500 outline-none"
-                    />
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-xl px-2">
-                        <input
-                          type="number"
-                          value={newItemQty}
-                          onChange={(e) => setNewItemQty(Number(e.target.value))}
-                          className="w-10 text-xs text-center outline-none bg-transparent"
-                        />
-                        <select
-                          value={newItemUnit}
-                          onChange={(e) => setNewItemUnit(e.target.value)}
-                          className="text-[10px] bg-transparent font-medium outline-none cursor-pointer flex-1"
-                        >
-                          {["pcs", "oz", "lb", "g", "kg", "cup", "ml", "l", "can", "box", "bag"].map((u) => (
-                            <option key={u} value={u}>{u}</option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <select
-                        value={newItemCategory}
-                        onChange={(e) => setNewItemCategory(e.target.value)}
-                        className="text-xs bg-gray-50 border border-gray-200 rounded-xl px-2 py-2 outline-none cursor-pointer"
-                      >
-                        {["Produce", "Protein", "Dairy", "Grains", "Spices", "Canned", "Frozen", "Snacks", "Beverages", "Other"].map((c) => (
-                          <option key={c} value={c}>{c}</option>
-                        ))}
-                      </select>
-
+              {/* 👉 LANDMARK: Desktop Static Add Box (Hidden on Mobile) */}
+                <div className="hidden md:block bg-white rounded-2xl p-4 border border-gray-200 shadow-sm mb-4">
+                  <div className="flex justify-between items-center mb-3 border-b border-gray-100 pb-2">
+                    <div className="flex items-center gap-2">
+                      <Plus className="w-5 h-5 text-indigo-600" />
+                      <span className="font-bold text-xs text-gray-800 uppercase">Add Inventory</span>
+                    </div>
+                    
+                    <div className="flex bg-gray-100 p-0.5 rounded-lg text-[10px] font-bold">
                       <button
-                        type="submit"
-                        className="py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-sm hover:bg-indigo-700 cursor-pointer"
+                        type="button"
+                        onClick={() => setQuickAddTab("single")}
+                        className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                          quickAddTab === "single" ? "bg-white shadow text-indigo-600" : "text-gray-500"
+                        }`}
                       >
-                        ADD ITEM
+                        Single Item
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQuickAddTab("bulk")}
+                        className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                          quickAddTab === "bulk" ? "bg-white shadow text-indigo-600" : "text-gray-500"
+                        }`}
+                      >
+                        📋 Multiline Paste
                       </button>
                     </div>
-                  </form>
-                ) : (
-                  <form onSubmit={handleBulkAdd} className="space-y-2">
-                    <p className="text-[10px] text-gray-400">Format each line as: <code className="bg-gray-100 p-0.5 rounded font-mono text-indigo-600">Item, Quantity, Expiration (e.g. 5d), Location</code></p>
-                    <textarea
-                      value={bulkText}
-                      onChange={(e) => setBulkText(e.target.value)}
-                      placeholder={`Milk, 1, 5d, Fridge\nChicken, 2, 3d, Freezer\nSpinach, 1, 4d, Fridge`}
-                      className="w-full h-24 p-2 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none resize-none font-mono"
-                    />
-                    <button
-                      type="submit"
-                      className="w-full py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-md hover:bg-indigo-700 cursor-pointer"
-                    >
-                      Import All Lines
-                    </button>
-                  </form>
+                  </div>
+
+                  {quickAddTab === "single" ? (
+                    <form onSubmit={handleAddManual} className="space-y-2">
+                      <input
+                        value={newItemName}
+                        onChange={(e) => setNewItemName(e.target.value)}
+                        placeholder="Add item name..."
+                        className="w-full p-2 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:border-indigo-500 outline-none"
+                      />
+                      <div className="grid grid-cols-3 gap-2">
+                        <div className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-xl px-2">
+                          <input
+                            type="number"
+                            value={newItemQty}
+                            onChange={(e) => setNewItemQty(Number(e.target.value))}
+                            className="w-10 text-xs text-center outline-none bg-transparent"
+                          />
+                          <select
+                            value={newItemUnit}
+                            onChange={(e) => setNewItemUnit(e.target.value)}
+                            className="text-[10px] bg-transparent font-medium outline-none cursor-pointer flex-1"
+                          >
+                            {["pcs", "oz", "lb", "g", "kg", "cup", "ml", "l", "can", "box", "bag"].map((u) => (
+                              <option key={u} value={u}>{u}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <select
+                          value={newItemCategory}
+                          onChange={(e) => setNewItemCategory(e.target.value)}
+                          className="text-xs bg-gray-50 border border-gray-200 rounded-xl px-2 py-2 outline-none cursor-pointer"
+                        >
+                          {["Produce", "Protein", "Dairy", "Grains", "Spices", "Canned", "Frozen", "Snacks", "Beverages", "Other"].map((c) => (
+                            <option key={c} value={c}>{c}</option>
+                          ))}
+                        </select>
+
+                        <button
+                          type="submit"
+                          className="py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-sm hover:bg-indigo-700 cursor-pointer"
+                        >
+                          ADD ITEM
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase">Shelf Life Preset:</span>
+                        <div className="flex gap-1.5">
+                          {[
+                            { label: "+3d", days: 3 },
+                            { label: "+5d", days: 5 },
+                            { label: "+1w", days: 7 },
+                            { label: "+2w", days: 14 },
+                          ].map((preset) => (
+                            <button
+                              key={preset.label}
+                              type="button"
+                              onClick={() => setNewItemExpiryDays(preset.days)}
+                              className={`px-2.5 py-1 rounded-lg text-[10px] font-bold border transition-all cursor-pointer ${
+                                newItemExpiryDays === preset.days
+                                  ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                                  : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </form>
+                  ) : (
+                    <form onSubmit={handleBulkAdd} className="space-y-2">
+                      <p className="text-[10px] text-gray-400">Format each line as: <code className="bg-gray-100 p-0.5 rounded font-mono text-indigo-600">Item, Quantity, Expiration (e.g. 5d), Location</code></p>
+                      <textarea
+                        value={bulkText}
+                        onChange={(e) => setBulkText(e.target.value)}
+                        placeholder={`Milk, 1, 5d, Fridge\nChicken, 2, 3d, Freezer\nSpinach, 1, 4d, Fridge`}
+                        className="w-full h-24 p-2 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none resize-none font-mono"
+                      />
+                      <button
+                        type="submit"
+                        className="w-full py-2 bg-indigo-600 text-white font-bold text-xs rounded-xl shadow-md hover:bg-indigo-700 cursor-pointer"
+                      >
+                        Import All Lines
+                      </button>
+                    </form>
+                  )}
+                </div>
+
+                {/* 👉 LANDMARK: Mobile Floating Action Button (FAB) */}
+                <div className="md:hidden fixed right-6 bottom-20 z-40">
+                  <button
+                    onClick={() => setShowAddDrawer(true)}
+                    className="w-14 h-14 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full shadow-2xl flex items-center justify-center transform active:scale-95 transition-all cursor-pointer"
+                    title="Add to Pantry"
+                  >
+                    <Plus className="w-7 h-7" />
+                  </button>
+                </div>
+                
+                {/* 👉 LANDMARK: Mobile Collapsible Expanding Drawer Sheet */}
+                {showAddDrawer && (
+                  <div className="md:hidden fixed inset-0 bg-black/60 z-[90] flex items-end justify-center animate-in fade-in">
+                    <div className="bg-white w-full max-w-lg rounded-t-3xl p-6 shadow-2xl space-y-4 animate-in slide-in-from-bottom max-h-[85vh] overflow-y-auto">
+                      
+                      <div className="flex justify-between items-center border-b pb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                            <Plus className="w-5 h-5" />
+                          </div>
+                          <h3 className="font-black text-base text-gray-900">Add to Pantry</h3>
+                        </div>
+                        <button 
+                          onClick={() => setShowAddDrawer(false)}
+                          className="p-1.5 text-gray-400 hover:text-gray-600 rounded-full cursor-pointer bg-gray-50"
+                        >
+                          <X className="w-5 h-5" />
+                        </button>
+                      </div>
+
+                      {/* Quick Action Grid (Scan Receipt & Voice) */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <label className="bg-indigo-50 border border-indigo-100 p-3 rounded-2xl cursor-pointer flex flex-col items-center justify-center text-center hover:bg-indigo-100 transition-colors">
+                          <Scan className="w-5 h-5 text-indigo-600 mb-1" />
+                          <span className="text-xs font-bold text-indigo-900">Scan Receipt</span>
+                          <span className="text-[9px] text-indigo-500">Auto-import items</span>
+                          <input type="file" capture="environment" onChange={(e) => { handleScan(e); setShowAddDrawer(false); }} className="hidden" />
+                        </label>
+
+                        <div className="bg-purple-50 border border-purple-100 p-3 rounded-2xl flex flex-col items-center justify-center text-center">
+                          <VoiceInputWidget 
+                            onVoiceSubmit={(t) => { handleVoiceInventorySubmit(t); setShowAddDrawer(false); }} 
+                            isProcessing={isVoiceProcessing} 
+                            layout="compact" 
+                          />
+                          <span className="text-xs font-bold text-purple-900 mt-1">Voice Input</span>
+                          <span className="text-[9px] text-purple-500">Speak items</span>
+                        </div>
+                      </div>
+
+                      {/* Mode Switcher Tabs */}
+                      <div className="flex bg-gray-100 p-1 rounded-xl text-xs font-bold">
+                        <button
+                          type="button"
+                          onClick={() => setQuickAddTab("single")}
+                          className={`flex-1 py-2 rounded-lg transition-all cursor-pointer ${
+                            quickAddTab === "single" ? "bg-white shadow text-indigo-600" : "text-gray-500"
+                          }`}
+                        >
+                          Single Item
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setQuickAddTab("bulk")}
+                          className={`flex-1 py-2 rounded-lg transition-all cursor-pointer ${
+                            quickAddTab === "bulk" ? "bg-white shadow text-indigo-600" : "text-gray-500"
+                          }`}
+                        >
+                          📋 Multiline Paste
+                        </button>
+                      </div>
+
+                      {quickAddTab === "single" ? (
+                        <form onSubmit={(e) => { handleAddManual(e); setShowAddDrawer(false); }} className="space-y-3">
+                          <input
+                            value={newItemName}
+                            onChange={(e) => setNewItemName(e.target.value)}
+                            placeholder="Add item name..."
+                            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs focus:border-indigo-500 outline-none"
+                          />
+                          <div className="grid grid-cols-2 gap-2">
+                            <div className="flex items-center gap-1 bg-gray-50 border border-gray-200 rounded-xl px-2">
+                              <input
+                                type="number"
+                                value={newItemQty}
+                                onChange={(e) => setNewItemQty(Number(e.target.value))}
+                                className="w-12 text-xs text-center outline-none bg-transparent py-2"
+                              />
+                              <select
+                                value={newItemUnit}
+                                onChange={(e) => setNewItemUnit(e.target.value)}
+                                className="text-xs bg-transparent font-medium outline-none cursor-pointer flex-1 py-2"
+                              >
+                                {["pcs", "oz", "lb", "g", "kg", "cup", "ml", "l", "can", "box", "bag"].map((u) => (
+                                  <option key={u} value={u}>{u}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <select
+                              value={newItemCategory}
+                              onChange={(e) => setNewItemCategory(e.target.value)}
+                              className="text-xs bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 outline-none cursor-pointer"
+                            >
+                              {["Produce", "Protein", "Dairy", "Grains", "Spices", "Canned", "Frozen", "Snacks", "Beverages", "Other"].map((c) => (
+                                <option key={c} value={c}>{c}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div className="space-y-1.5 pt-1">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase">Shelf Life Preset:</span>
+                            <div className="grid grid-cols-4 gap-1.5">
+                              {[
+                                { label: "+3d", days: 3 },
+                                { label: "+5d", days: 5 },
+                                { label: "+1w", days: 7 },
+                                { label: "+2w", days: 14 },
+                              ].map((preset) => (
+                                <button
+                                  key={preset.label}
+                                  type="button"
+                                  onClick={() => setNewItemExpiryDays(preset.days)}
+                                  className={`py-2 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
+                                    newItemExpiryDays === preset.days
+                                      ? "bg-indigo-600 text-white border-indigo-600 shadow-xs"
+                                      : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+                                  }`}
+                                >
+                                  {preset.label}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          <button
+                            type="submit"
+                            className="w-full py-3.5 bg-indigo-600 text-white font-bold text-xs rounded-2xl shadow-md hover:bg-indigo-700 cursor-pointer"
+                          >
+                            Add to Pantry
+                          </button>
+                        </form>
+                      ) : (
+                        <form onSubmit={(e) => { handleBulkAdd(e); setShowAddDrawer(false); }} className="space-y-3">
+                          <p className="text-[10px] text-gray-400">Format each line as: <code className="bg-gray-100 p-0.5 rounded font-mono text-indigo-600">Item, Quantity, Expiration (e.g. 5d), Location</code></p>
+                          <textarea
+                            value={bulkText}
+                            onChange={(e) => setBulkText(e.target.value)}
+                            placeholder={`Milk, 1, 5d, Fridge\nChicken, 2, 3d, Freezer\nSpinach, 1, 4d, Fridge`}
+                            className="w-full h-32 p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none resize-none font-mono"
+                          />
+                          <button
+                            type="submit"
+                            className="w-full py-3.5 bg-indigo-600 text-white font-bold text-xs rounded-2xl shadow-md hover:bg-indigo-700 cursor-pointer"
+                          >
+                            Import All Lines
+                          </button>
+                        </form>
+                      )}
+
+                    </div>
+                  </div>
                 )}
-              </div>
 
               {/* Pantry List Header */}
               <div className="flex justify-between items-center mb-2">
@@ -7096,18 +7770,29 @@ const handleBulkAdd = async (e) => {
                       </div>
                     </div>
                   ) : (
-                    /* STANDARD LIST VIEW */
-                    inventory.map((item) => (
-                      <InventoryItem
-                        key={item.id}
-                        item={item}
-                        onUpdateQty={handleUpdateQty}
-                        onDelete={async (id) =>
-                          deleteDoc(doc(db, `/artifacts/${appId}/users/${effectiveUserId}/inventory`, id))
-                        }
-                        onUpdate={handleUpdateItem}
-                        onFindRecipes={(name) => handleGetAIRecipes(name)}
-                      />
+                    /* Category Grouped List View */
+                    Object.entries(groupedInventory).map(([category, items]) => (
+                      <div key={category} className="space-y-2">
+                        <div className="flex items-center justify-between px-1 pt-2">
+                          <h4 className="font-black text-xs text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
+                            <Layers className="w-3.5 h-3.5 text-indigo-500" /> {category} ({items.length})
+                          </h4>
+                        </div>
+                        <div className="space-y-1">
+                          {items.map((item) => (
+                            <InventoryItem
+                              key={item.id}
+                              item={item}
+                              onUpdateQty={handleUpdateQty}
+                              onDelete={async (id) =>
+                                deleteDoc(doc(db, `/artifacts/${appId}/users/${effectiveUserId}/inventory`, id))
+                              }
+                              onUpdate={handleUpdateItem}
+                              onFindRecipes={(name) => handleGetAIRecipes(name)}
+                            />
+                          ))}
+                        </div>
+                      </div>
                     ))
                   )
                 ) : (
@@ -7236,11 +7921,19 @@ const handleBulkAdd = async (e) => {
                         <option value="">All Cuisines</option>
                         {[
                           "American",
-                          "Italian",
                           "Mexican",
+                          "Italian",
                           "Asian",
                           "Indian",
                           "Mediterranean",
+                          "Thai",          
+                          "Caribbean",     
+                          "French",
+                          "Chinese",
+                          "Greek",
+                          "German",
+                          "Filipino",
+                          "Japanese",
                         ].map((c) => (
                           <option key={c} value={c}>
                             {c}
@@ -7275,6 +7968,66 @@ const handleBulkAdd = async (e) => {
                           {v}
                         </button>
                       ))}
+                    </div>
+                  </div>
+                  {/* 👉 LANDMARK: Advanced Recipe Search & Generation Filters Toolbar */}
+                  <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm space-y-3">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+                        <FilterIcon className="w-3.5 h-3.5 text-indigo-600" /> Advanced Filters
+                      </span>
+                      <button
+                        onClick={() => setActiveFilters({ proteins: [], vegetables: [], cuisine: "", mealType: "Any", maxCalories: 800, maxCost: 20, ignoreHistory: false })}
+                        className="text-[10px] text-gray-400 hover:text-gray-600 font-bold cursor-pointer"
+                      >
+                        Reset
+                      </button>
+                    </div>
+
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                      {/* Meal Type Selector */}
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-gray-400 uppercase">Meal Type</label>
+                        <select
+                          value={activeFilters.mealType}
+                          onChange={(e) => setActiveFilters({ ...activeFilters, mealType: e.target.value })}
+                          className="w-full p-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none cursor-pointer"
+                        >
+                          {["Any", "Breakfast", "Lunch", "Dinner", "Snack"].map((m) => (
+                            <option key={m} value={m}>{m}</option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {/* Calorie Cap Slider */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[9px] font-bold text-gray-400 uppercase">
+                          <span>Max Cals</span>
+                          <span className="text-indigo-600 font-mono">{activeFilters.maxCalories} kcal</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="300"
+                          max="1200"
+                          step="50"
+                          value={activeFilters.maxCalories}
+                          onChange={(e) => setActiveFilters({ ...activeFilters, maxCalories: parseInt(e.target.value) })}
+                          className="w-full accent-indigo-600 h-1 bg-gray-200 rounded-lg cursor-pointer mt-2"
+                        />
+                      </div>
+
+                      {/* Anti-Repeat History Override Toggle */}
+                      <div className="flex flex-col justify-end">
+                        <label className="flex items-center gap-2 p-2 bg-gray-50 border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={activeFilters.ignoreHistory}
+                            onChange={(e) => setActiveFilters({ ...activeFilters, ignoreHistory: e.target.checked })}
+                            className="w-4 h-4 text-indigo-600 rounded border-gray-300 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <span className="text-[10px] font-bold text-gray-700 leading-tight">Allow Recent Favorites</span>
+                        </label>
+                      </div>
                     </div>
                   </div>
                   {recentlyViewed.length > 0 && (
@@ -7339,6 +8092,7 @@ const handleBulkAdd = async (e) => {
                         isSaved={savedRecipes.some((s) => s.title === r.title)}
                         onToggleSave={handleToggleSave}
                         onVote={handleVote}
+                        userNote={recipeNotes[r.id || r.firestoreId]} // pass private note
                       />
                     ))}
                   </div>
@@ -7426,6 +8180,7 @@ const handleBulkAdd = async (e) => {
                         isSaved={true}
                         onToggleSave={handleToggleSave}
                         onVote={handleVote}
+                        userNote={recipeNotes[r.id || r.firestoreId]} //pass private note
                       />
                     ))
                   ) : (
@@ -7456,6 +8211,12 @@ const handleBulkAdd = async (e) => {
                   <p className="text-xs text-gray-400">No meals scheduled for this week yet.</p>
                 )}
               </div>
+
+              <NutritionReportView 
+              nutritionLogs={nutritionLogs}
+              onDeleteLog={handleDeleteNutritionLog}
+              userProfile={userProfile}
+            />
 
               <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm">
                 <h4 className="font-bold text-gray-900 text-sm mb-3 flex items-center gap-2">
@@ -7816,6 +8577,13 @@ const handleBulkAdd = async (e) => {
               onShowLogin={() => setShowLoginModal(true)}
               onRestartTour={() => setShowOnboarding(true)}
             />
+
+            {/* Cooked Nutrition Analytics Report View */}
+            <NutritionReportView 
+              nutritionLogs={nutritionLogs}
+              onDeleteLog={handleDeleteNutritionLog}
+              userProfile={userProfile}
+            />
           </div>
 
           {/* Right Sidebar Column: Sticky Trophy Case */}
@@ -7893,6 +8661,7 @@ const handleBulkAdd = async (e) => {
                 effectiveUserId={effectiveUserId}
                 communityRecipes={communityRecipes}
                 setActiveTab={setActiveTab}
+                isAdmin={isAdmin}
               />
             </div>
           </div>
