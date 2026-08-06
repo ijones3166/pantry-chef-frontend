@@ -1,3 +1,9 @@
+import CookingMode from './components/CookingMode';
+import ConverterWidget from './components/ConverterWidget';
+import KitchenGuide from './components/KitchenGuide';
+import RecipeValidationModal from './components/RecipeValidationModal';
+import CommunityGuidelinesModal from './components/CommunityGuidelinesModal';
+import LegalModal from './components/LegalModal';
 import MealPrepView from './components/MealPrepView';
 import ShareModal from './components/ShareModal';
 import BrandedRedirectModal from './components/BrandedRedirectModal';
@@ -1823,305 +1829,6 @@ const SystemNotification = ({ title, body, onClose }) => (
   </div>
 );
 
-const KitchenGuide = () => {
-  const [activeGuide, setActiveGuide] = useState("knife");
-
-  return (
-    <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="font-bold text-gray-900 flex items-center gap-2">
-          <BookOpen className="w-5 h-5 text-indigo-600" /> Kitchen Cheat Sheets
-        </h3>
-      </div>
-
-      <div className="flex bg-gray-100 p-1 rounded-xl mb-4 overflow-x-auto no-scrollbar gap-1">
-        {[
-          { id: "knife", label: "Knife Skills" },
-          { id: "meat", label: "Steak Temps" },
-          { id: "oils", label: "Cooking Oils" },
-          { id: "storage", label: "Food Storage" },
-          { id: "defrost", label: "Defrosting" },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveGuide(tab.id)}
-            className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold whitespace-nowrap transition-all ${
-              activeGuide === tab.id
-                ? "bg-white shadow text-indigo-600"
-                : "text-gray-500 cursor-pointer"
-            }`}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      {activeGuide === "knife" && (
-        <div className="space-y-3 animate-in fade-in">
-          <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-xl border border-gray-100">
-            <div className="w-12 h-12 bg-white rounded-lg border border-gray-200 flex flex-col justify-evenly p-1">
-              <div className="h-1 bg-indigo-200 rounded-full w-full"></div>
-              <div className="h-1 bg-indigo-200 rounded-full w-full"></div>
-              <div className="h-1 bg-indigo-200 rounded-full w-full"></div>
-            </div>
-            <div>
-              <h4 className="font-bold text-xs text-gray-800">Slice</h4>
-              <p className="text-[10px] text-gray-500">
-                Thin, broad cuts across the food.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-xl border border-gray-100">
-            <div className="w-12 h-12 bg-white rounded-lg border border-gray-200 grid grid-cols-2 gap-1 p-1">
-              <div className="bg-orange-200 rounded-sm"></div>
-              <div className="bg-orange-200 rounded-sm"></div>
-              <div className="bg-orange-200 rounded-sm"></div>
-              <div className="bg-orange-200 rounded-sm"></div>
-            </div>
-            <div>
-              <h4 className="font-bold text-xs text-gray-800">Chop</h4>
-              <p className="text-[10px] text-gray-500">
-                Irregular pieces, roughly bite-sized.
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-xl border border-gray-100">
-            <div className="w-12 h-12 bg-white rounded-lg border border-gray-200 grid grid-cols-4 gap-0.5 p-1">
-              {[...Array(16)].map((_, i) => (
-                <div key={i} className="bg-green-200 rounded-[1px]"></div>
-              ))}
-            </div>
-            <div>
-              <h4 className="font-bold text-xs text-gray-800">Dice</h4>
-              <p className="text-[10px] text-gray-500">
-                Small, uniform cubes (approx 1/4 inch).
-              </p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3 bg-gray-50 p-3 rounded-xl border border-gray-100">
-            <div className="w-12 h-12 bg-white rounded-lg border border-gray-200 flex gap-1 p-1">
-              <div className="w-1 bg-red-200 rounded-full h-full"></div>
-              <div className="w-1 bg-red-200 rounded-full h-full"></div>
-              <div className="w-1 bg-red-200 rounded-full h-full"></div>
-              <div className="w-1 bg-red-200 rounded-full h-full"></div>
-            </div>
-            <div>
-              <h4 className="font-bold text-xs text-gray-800">Julienne</h4>
-              <p className="text-[10px] text-gray-500">
-                Long, thin matchsticks.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {activeGuide === "meat" && (
-        <div className="space-y-3 animate-in fade-in">
-          {[
-            {
-              label: "Rare",
-              temp: "125°F",
-              color: "radial-gradient(circle, #ff0000 20%, #5c2a2a 90%)",
-              desc: "Cool red center",
-            },
-            {
-              label: "Med Rare",
-              temp: "135°F",
-              color: "radial-gradient(circle, #ff4d4d 30%, #6d3b3b 90%)",
-              desc: "Warm red center",
-            },
-            {
-              label: "Medium",
-              temp: "145°F",
-              color: "radial-gradient(circle, #ff9999 40%, #7e4c4c 90%)",
-              desc: "Warm pink center",
-            },
-            {
-              label: "Med Well",
-              temp: "150°F",
-              color: "radial-gradient(circle, #ffcccc 50%, #8f5d5d 90%)",
-              desc: "Slightly pink center",
-            },
-            {
-              label: "Well Done",
-              temp: "160°F+",
-              color: "radial-gradient(circle, #e6b8b8 10%, #5c2a2a 90%)",
-              desc: "Little or no pink",
-            },
-          ].map((grade, i) => (
-            <div
-              key={i}
-              className="flex items-center justify-between bg-gray-50 p-2 rounded-xl border border-gray-100"
-            >
-              <div className="flex items-center gap-3">
-                <div
-                  className="w-10 h-8 rounded-full border border-gray-300 shadow-inner"
-                  style={{ background: grade.color }}
-                ></div>
-                <div>
-                  <h4 className="font-bold text-xs text-gray-800">
-                    {grade.label}
-                  </h4>
-                  <p className="text-[10px] text-gray-500">{grade.desc}</p>
-                </div>
-              </div>
-              <span className="text-xs font-mono font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-lg">
-                {grade.temp}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {activeGuide === "oils" && (
-        <div className="space-y-3 animate-in fade-in">
-          {[
-            {
-              name: "Butter",
-              temp: "300°F",
-              use: "Flavor / Baking",
-              level: 20,
-              color: "bg-yellow-400",
-            },
-            {
-              name: "Olive Oil (EVOO)",
-              temp: "325°F",
-              use: "Dressings / Dip",
-              level: 30,
-              color: "bg-green-500",
-            },
-            {
-              name: "Vegetable/Canola",
-              temp: "400°F",
-              use: "Frying / Baking",
-              level: 70,
-              color: "bg-yellow-200",
-            },
-            {
-              name: "Avocado Oil",
-              temp: "520°F",
-              use: "High Heat Searing",
-              level: 100,
-              color: "bg-green-700",
-            },
-          ].map((oil, i) => (
-            <div
-              key={i}
-              className="bg-gray-50 p-3 rounded-xl border border-gray-100"
-            >
-              <div className="flex justify-between text-xs mb-1">
-                <span className="font-bold text-gray-800">{oil.name}</span>
-                <span className="font-mono text-gray-500">{oil.temp}</span>
-              </div>
-              <div className="w-full bg-gray-200 rounded-full h-2 mb-2 overflow-hidden">
-                <div
-                  className={`h-full ${oil.color}`}
-                  style={{ width: `${oil.level}%` }}
-                ></div>
-              </div>
-              <div className="flex items-center gap-1 text-[10px] text-gray-500">
-                <ThermometerSun className="w-3 h-3" /> Best for:{" "}
-                <span className="font-bold">{oil.use}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {activeGuide === "storage" && (
-        <div className="space-y-2 animate-in fade-in">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-blue-50 p-3 rounded-xl border border-blue-100">
-              <h4 className="font-bold text-blue-800 text-xs mb-2 flex items-center gap-1">
-                <ColdIcon className="w-3 h-3" /> Fridge
-              </h4>
-              <ul className="text-[10px] text-blue-700 space-y-1 list-disc pl-3">
-                <li>Leafy Greens</li>
-                <li>Berries</li>
-                <li>Carrots (in water)</li>
-                <li>Apples (crisper)</li>
-                <li>Soft Herbs (Cilantro)</li>
-              </ul>
-            </div>
-            <div className="bg-orange-50 p-3 rounded-xl border border-orange-100">
-              <h4 className="font-bold text-orange-800 text-xs mb-2 flex items-center gap-1">
-                <Sun className="w-3 h-3" /> Counter
-              </h4>
-              <ul className="text-[10px] text-orange-700 space-y-1 list-disc pl-3">
-                <li>Tomatoes</li>
-                <li>Potatoes (dark)</li>
-                <li>Onions (separate)</li>
-                <li>Garlic</li>
-                <li>Bananas</li>
-              </ul>
-            </div>
-          </div>
-          <p className="text-[10px] text-gray-400 italic text-center mt-2">
-            Tip: Don't store Onions & Potatoes together!
-          </p>
-        </div>
-      )}
-
-      {activeGuide === "defrost" && (
-        <div className="space-y-3 animate-in fade-in">
-          <div className="flex items-start gap-3 bg-blue-50 p-3 rounded-xl border border-blue-100">
-            <div className="bg-white p-2 rounded-lg border border-blue-200">
-              <ColdIcon className="w-5 h-5 text-blue-500" />
-            </div>
-            <div>
-              <h4 className="font-bold text-xs text-blue-900">
-                Refrigerator (Best)
-              </h4>
-              <p className="text-[10px] text-blue-700 mb-1">
-                Slow & safe. Keeps quality high.
-              </p>
-              <span className="text-[9px] font-bold bg-white px-2 py-0.5 rounded text-blue-500 border border-blue-200">
-                24 hrs / 5lbs
-              </span>
-            </div>
-          </div>
-          <div className="flex items-start gap-3 bg-cyan-50 p-3 rounded-xl border border-cyan-100">
-            <div className="bg-white p-2 rounded-lg border border-cyan-200">
-              <RefreshCw className="w-5 h-5 text-cyan-500" />
-            </div>
-            <div>
-              <h4 className="font-bold text-xs text-cyan-900">
-                Cold Water (Faster)
-              </h4>
-              <p className="text-[10px] text-cyan-700 mb-1">
-                Submerge in leak-proof bag. Change water every 30m.
-              </p>
-              <span className="text-[9px] font-bold bg-white px-2 py-0.5 rounded text-cyan-500 border border-cyan-200">
-                30 min / lb
-              </span>
-            </div>
-          </div>
-          <div className="flex items-start gap-3 bg-purple-50 p-3 rounded-xl border border-purple-100">
-            <div className="bg-white p-2 rounded-lg border border-purple-200">
-              <Zap className="w-5 h-5 text-purple-500" />
-            </div>
-            <div>
-              <h4 className="font-bold text-xs text-purple-900">
-                Microwave (Fastest)
-              </h4>
-              <p className="text-[10px] text-purple-700 mb-1">
-                Use 'Defrost' setting. Cook immediately after.
-              </p>
-              <span className="text-[9px] font-bold bg-white px-2 py-0.5 rounded text-purple-500 border border-purple-200">
-                ~5-10 min
-              </span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2 bg-red-50 p-2 rounded-lg border border-red-100 text-red-700 text-[10px]">
-            <AlertTriangle className="w-4 h-4 shrink-0" />
-            <strong>Never</strong> thaw meat on the counter at room temp!
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-
 const SubscriptionModal = ({ onClose }) => (
   <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-in fade-in">
     <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in slide-in-from-bottom">
@@ -2214,128 +1921,7 @@ const NativeProductAd = ({ tool }) => (
   </div>
 );
 
-const ConverterWidget = () => {
-  const [convertCat, setConvertCat] = useState("Volume");
-  const [amount, setAmount] = useState("1");
-  const [fromUnit, setFromUnit] = useState("cup");
-  const [toUnit, setToUnit] = useState("tbsp");
-  const [result, setResult] = useState("");
-  const factors = {
-    Volume: {
-      tsp: 4.92892,
-      tbsp: 14.7868,
-      fl_oz: 29.5735,
-      cup: 236.588,
-      pt: 473.176,
-      qt: 946.353,
-      gal: 3785.41,
-      ml: 1,
-      l: 1000,
-    },
-    Weight: { oz: 28.3495, lb: 453.592, g: 1, kg: 1000 },
-    Temperature: {},
-  };
-  useEffect(() => {
-    if (!amount) return setResult("");
-    const val = parseFloat(amount);
-    if (isNaN(val)) return setResult("...");
-    if (convertCat === "Temperature") {
-      if (fromUnit === "F" && toUnit === "C")
-        setResult((((val - 32) * 5) / 9).toFixed(1));
-      else if (fromUnit === "C" && toUnit === "F")
-        setResult(((val * 9) / 5 + 32).toFixed(1));
-      else setResult(val);
-    } else {
-      const base = val * factors[convertCat][fromUnit];
-      const final = base / factors[convertCat][toUnit];
-      setResult(final.toFixed(2).replace(/\.00$/, ""));
-    }
-  }, [amount, fromUnit, toUnit, convertCat]);
-  return (
-    <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-6">
-      <div className="flex justify-center gap-4 mb-4">
-        {["Volume", "Weight", "Temperature"].map((c) => (
-          <button
-            key={c}
-            onClick={() => {
-              setConvertCat(c);
-              setFromUnit(
-                Object.keys(
-                  c === "Temperature" ? { F: 1, C: 1 } : factors[c]
-                )[0]
-              );
-              setToUnit(
-                Object.keys(
-                  c === "Temperature" ? { F: 1, C: 1 } : factors[c]
-                )[1]
-              );
-            }}
-            className={`text-xs font-bold px-3 py-1 rounded-full cursor-pointer ${
-              convertCat === c
-                ? "bg-indigo-100 text-indigo-700"
-                : "bg-gray-100 text-gray-500 cursor-pointer"
-            }`}
-          >
-            {c}
-          </button>
-        ))}
-      </div>
-      <div className="flex items-center gap-4">
-        <div className="flex-1 space-y-2">
-          <label className="text-xs font-bold text-gray-400">AMOUNT</label>
-          <input
-            type="number"
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className="w-full text-3xl font-bold p-2 border-b-2 border-indigo-100 focus:border-indigo-600 outline-none"
-          />
-          <select
-            value={fromUnit}
-            onChange={(e) => setFromUnit(e.target.value)}
-            className="w-full bg-white text-sm font-medium cursor-pointer"
-          >
-            {convertCat === "Temperature"
-              ? ["F", "C"].map((u) => (
-                  <option key={u} value={u}>
-                    °{u}
-                  </option>
-                ))
-              : Object.keys(factors[convertCat]).map((u) => (
-                  <option key={u} value={u}>
-                    {u}
-                  </option>
-                ))}
-          </select>
-        </div>
-        <ArrowRightLeft className="w-5 h-5 text-gray-300 mt-4" />
-        <div className="flex-1 space-y-2 text-right">
-          <label className="text-xs font-bold text-gray-400">RESULT</label>
-          <div className="w-full text-3xl font-bold p-2 border-b-2 border-transparent text-indigo-600">
-            {result}
-          </div>
-          <select
-            value={toUnit}
-            onChange={(e) => setToUnit(e.target.value)}
-            className="w-full bg-white text-sm font-medium text-right cursor-pointer"
-            dir="rtl"
-          >
-            {convertCat === "Temperature"
-              ? ["C", "F"].map((u) => (
-                  <option key={u} value={u}>
-                    °{u}
-                  </option>
-                ))
-              : Object.keys(factors[convertCat]).map((u) => (
-                  <option key={u} value={u}>
-                    {u}
-                  </option>
-                ))}
-          </select>
-        </div>
-      </div>
-    </div>
-  );
-};
+
 
 const InventoryItem = ({ item, onUpdate, onDelete, onFindRecipes }) => {
   const [isEditing, setIsEditing] = useState(false);
@@ -2565,25 +2151,21 @@ const RecipeCard = ({
           <CreatorBadge isBrand={recipe.isBrand} isCreator={recipe.isCreator} />
           {!recipe.isBrand &&
             !recipe.isCreator &&
-            (recipe.isDB ? (
-              <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full flex items-center">
-                <Database className="w-3 h-3 mr-1" /> Web
-              </span>
-            ) : isUserRecipe ? (
-              <span className="text-[10px] bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full flex items-center">
-                <Users className="w-3 h-3 mr-1" /> Community
-              </span>
-            ) : (
-              <span
-                className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                  recipe.matchPercentage >= 75
-                    ? "bg-green-100 text-green-700"
-                    : "bg-orange-100 text-orange-700"
-                }`}
-              >
-                {recipe.matchPercentage}% MATCH
-              </span>
-            ))}
+            (() => {
+              // 👉 Dynamic Pantry Match Calculation
+              const matchPct = recipe.matchPercentage ?? calculatePantryMatch(recipe.allIngredients, inventory);
+              const badgeColor = matchPct === 100 
+                ? "bg-green-100 text-green-700 border border-green-200" 
+                : matchPct >= 50 
+                ? "bg-amber-100 text-amber-800 border border-amber-200" 
+                : "bg-gray-100 text-gray-600 border border-gray-200";
+
+              return (
+                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full ${badgeColor}`}>
+                  ✨ {matchPct}% MATCH
+                </span>
+              );
+            })()}
           <span className="text-[10px] text-gray-400 flex items-center ml-auto">
             <Clock className="w-3 h-3 mr-1" /> {recipe.prepTime}
           </span>
@@ -3004,241 +2586,7 @@ const MealPlanner = ({ plan, onAddMeal, onDeleteMeal, onGenerateDayPlan, onPlanE
   );
 };
 
-const CookingMode = ({ recipe, initialServings, onClose }) => {
-  const [step, setStep] = useState(0);
-  const [chatOpen, setChatOpen] = useState(false);
-  const [chatQuery, setChatQuery] = useState("");
-  const [chatLog, setChatLog] = useState([]);
-  const [aiThinking, setAiThinking] = useState(false);
-  const [activeTimer, setActiveTimer] = useState(null);
-  const [showMenuOverlay, setShowMenuOverlay] = useState(false);
 
-  useEffect(() => {
-    let interval;
-    if (activeTimer && activeTimer.remaining > 0) {
-      interval = setInterval(() => {
-        setActiveTimer((curr) => ({ ...curr, remaining: curr.remaining - 1 }));
-      }, 1000);
-    } else if (activeTimer && activeTimer.remaining === 0) {
-      alert(`${activeTimer.label} Finished!`);
-      setActiveTimer(null);
-    }
-    return () => clearInterval(interval);
-  }, [activeTimer]);
-
-  const startTimer = (minutes) => {
-    setActiveTimer({
-      duration: minutes * 60,
-      remaining: minutes * 60,
-      label: `${minutes}m Timer`,
-    });
-  };
-
-  // Robust instruction parser: handles explicit line breaks or fallback numeric patterns
-  const rawInstructions = recipe.instructions || "1. Prepare ingredients as directed.\n2. Cook until done.";
-  const steps = rawInstructions.includes("\n")
-    ? rawInstructions.split(/\r?\n/).filter((s) => s.trim().length > 0)
-    : rawInstructions.split(/(?=\d+\.\s+)/).filter((s) => s.trim().length > 0);
-
-  const handleAskChef = async (e) => {
-    e.preventDefault();
-    if (!chatQuery.trim()) return;
-    const q = chatQuery;
-    setChatLog([...chatLog, { role: "user", text: q }]);
-    setChatQuery("");
-    setAiThinking(true);
-    try {
-      const ans = await askAIChef(q, JSON.stringify(recipe));
-      setChatLog((prev) => [...prev, { role: "ai", text: ans }]);
-    } catch (err) {
-      setChatLog((prev) => [
-        ...prev,
-        { role: "ai", text: "Connection error." },
-      ]);
-    }
-    setAiThinking(false);
-  };
-
-  const renderStepWithTimer = (text) => {
-    const stepText = typeof text === 'string' ? text : String(text || "");
-    const timeMatch = stepText.match(/(\d+)\s*(minute|min|m)s?/i);
-    return (
-      <span>
-        {stepText}
-        {timeMatch && (
-          <button
-            onClick={() => startTimer(parseInt(timeMatch[1]))}
-            className="ml-2 inline-flex items-center px-2 py-1 bg-indigo-100 text-indigo-700 rounded-full text-xs font-bold hover:bg-indigo-200 cursor-pointer"
-          >
-            <TimerIcon className="w-3 h-3 mr-1" /> Start {timeMatch[1]}m Timer
-          </button>
-        )}
-      </span>
-    );
-  };
-
-  return (
-    <div className="fixed inset-0 bg-gray-900 z-50 flex flex-col text-white animate-in slide-in-from-bottom duration-300">
-      {activeTimer && (
-        <div className="bg-indigo-600 p-4 flex justify-between items-center shadow-lg border-b border-indigo-500 z-50">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-white/20 rounded-full animate-pulse">
-              <AlarmClock className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-wider opacity-80">
-                {activeTimer.label}
-              </p>
-              <p className="text-2xl font-mono font-black leading-none">
-                {Math.floor(activeTimer.remaining / 60)}:
-                {(activeTimer.remaining % 60).toString().padStart(2, "0")}
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={() => setActiveTimer(null)}
-            className="p-2 bg-white/20 rounded-lg hover:bg-white/30 cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
-        </div>
-      )}
-      
-
-      <div className="p-4 flex justify-between items-center bg-gray-800 z-20 border-b border-gray-700">
-        <div className="flex items-center gap-2">
-          {/* Menu / Overview Toggle Button */}
-          <button
-            onClick={() => setShowMenuOverlay(!showMenuOverlay)}
-            className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
-            title="Toggle Recipe Overview"
-          >
-            <List className="w-4 h-4" /> {showMenuOverlay ? "Close Menu" : "Recipe Menu"}
-          </button>
-        </div>
-        
-        <div className="flex-1 px-3 text-center">
-          <h2 className="font-bold text-sm truncate">{recipe.title}</h2>
-          <p className="text-[10px] text-gray-400">
-            Cooking for {initialServings} servings
-          </p>
-        </div>
-
-        <button onClick={onClose} className="p-2 bg-gray-700 hover:bg-gray-600 rounded-full cursor-pointer">
-          <X className="w-5 h-5" />
-        </button>
-      </div>
-
-      {showMenuOverlay && (
-        <div className="absolute inset-x-0 top-16 bottom-0 bg-gray-900/95 backdrop-blur-md z-30 p-6 overflow-y-auto animate-in fade-in space-y-4">
-          <div className="flex justify-between items-center border-b border-gray-800 pb-3">
-            <h3 className="font-bold text-sm text-indigo-400 uppercase tracking-wider">Quick Navigation</h3>
-            <button onClick={() => setShowMenuOverlay(false)} className="text-gray-400 hover:text-white cursor-pointer">
-              <X className="w-5 h-5" />
-            </button>
-          </div>
-          <div>
-            <h4 className="text-xs font-bold text-gray-400 uppercase mb-2">Jump to Step:</h4>
-            <div className="grid grid-cols-2 gap-2">
-              {steps.map((sText, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => {
-                    setStep(idx);
-                    setShowMenuOverlay(false);
-                  }}
-                  className={`p-2 rounded-xl text-xs text-left font-medium truncate border cursor-pointer ${
-                    step === idx ? "bg-indigo-600 border-indigo-500 text-white" : "bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700"
-                  }`}
-                >
-                  Step {idx + 1}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-
-
-      <div className="flex-grow flex flex-col justify-center p-6 text-center space-y-6 overflow-y-auto">
-        <span className="text-gray-400 text-sm font-bold uppercase tracking-widest">
-          Step {step + 1} of {steps.length}
-        </span>
-        <p className="text-2xl md:text-3xl font-medium leading-relaxed">
-          {renderStepWithTimer(steps[step])}
-        </p>
-      </div>
-
-
-      <div className="p-6 pb-8 space-y-4">
-        <div className="flex gap-4">
-          <button
-            disabled={step === 0}
-            onClick={() => setStep((s) => Math.max(0, s - 1))}
-            className="flex-1 py-4 bg-gray-700 rounded-2xl font-bold disabled:opacity-30 cursor-pointer"
-          >
-            Previous
-          </button>
-          <button
-            disabled={step === steps.length - 1}
-            onClick={() => setStep((s) => Math.min(steps.length - 1, s + 1))}
-            className="flex-1 py-4 bg-indigo-600 rounded-2xl font-bold disabled:opacity-30 cursor-pointer"
-          >
-            Next Step
-          </button>
-        </div>
-        <button
-          onClick={() => setChatOpen(!chatOpen)}
-          className="w-full py-3 bg-gray-800 rounded-xl text-indigo-300 font-bold flex items-center justify-center gap-2 cursor-pointer"
-        >
-          <List className="w-4 h-4" /> Ask Chef Assistant
-        </button>
-      </div>
-      {chatOpen && (
-        <div className="absolute inset-x-0 bottom-0 h-3/4 bg-white text-gray-900 rounded-t-3xl shadow-2xl flex flex-col animate-in slide-in-from-bottom">
-          <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-3xl">
-            <h3 className="font-bold">Chef Assistant</h3>
-            <button onClick={() => setChatOpen(false)}>
-              <X className="w-5 h-5 cursor-pointer" />
-            </button>
-          </div>
-          <div className="flex-grow overflow-y-auto p-4 space-y-3 bg-gray-50">
-            {chatLog.map((msg, i) => (
-              <div
-                key={i}
-                className={`p-3 rounded-xl max-w-[85%] text-sm ${
-                  msg.role === "user"
-                    ? "bg-indigo-600 text-white ml-auto"
-                    : "bg-white border border-gray-200 mr-auto"
-                }`}
-              >
-                {msg.text}
-              </div>
-            ))}
-          </div>
-          <form
-            onSubmit={handleAskChef}
-            className="p-4 border-t bg-white flex gap-2"
-          >
-            <input
-              value={chatQuery}
-              onChange={(e) => setChatQuery(e.target.value)}
-              placeholder="Ask question..."
-              className="flex-grow p-3 bg-gray-100 rounded-xl text-sm outline-none"
-            />
-            <button
-              type="submit"
-              className="p-3 bg-indigo-600 text-white rounded-xl cursor-pointer"
-            >
-              <ChevronRight />
-            </button>
-          </form>
-        </div>
-      )}
-    </div>
-  );
-};
 const RecipeDetailView = ({
   recipe,
   onClose,
@@ -3255,6 +2603,11 @@ const RecipeDetailView = ({
   userProfile,
   onUpdateEquipment,
   effectiveUserId,
+  globalTimers,      
+  setGlobalTimers,   
+  pinnedRecipes,     
+  setPinnedRecipes,
+  askAIChef,
 }) => {
   const baseServings = recipe.servings || 4;
   const [servings, setServings] = useState(baseServings);
@@ -3334,6 +2687,11 @@ const RecipeDetailView = ({
         recipe={recipe}
         initialServings={servings}
         onClose={() => setCookingMode(false)}
+        globalTimers={globalTimers}
+        setGlobalTimers={setGlobalTimers}
+        pinnedRecipes={pinnedRecipes}
+        setPinnedRecipes={setPinnedRecipes}
+        askAIChef={askAIChef}
       />
     );
   const authorTitle = recipe.authorName ? `${recipe.authorName}'s Recommended Equipment` : "Recommended Equipment";
@@ -4408,7 +3766,9 @@ const ToolsScreen = ({
   isDemoAuthenticated,
   onShowLogin,
   onRestartTour,
-  defaultTab = "tools"
+  defaultTab = "tools",
+  onOpenGuidelines,
+  onOpenLegal,
 }) => {
   const [subTab, setSubTab] = useState(defaultTab);
   const [profileImage, setProfileImage] = useState(profile.image || null);
@@ -4856,6 +4216,26 @@ const handleProtectedPreferenceChange = (contextLabel, callback) => {
                   {e}
                 </button>
               ))}
+            </div>
+          </div>
+
+          {/* 👉 PLATFORM GOVERNANCE FOOTER LINKS */}
+          <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm text-center space-y-2">
+            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Platform Governance</p>
+            <div className="flex justify-center gap-4 text-xs font-bold text-indigo-600">
+              <button
+                onClick={onOpenGuidelines} // 👉 Hook up to prop
+                className="hover:underline cursor-pointer"
+              >
+                Community Guidelines
+              </button>
+              <span className="text-gray-300">•</span>
+              <button
+                onClick={onOpenLegal} // 👉 Hook up to prop
+                className="hover:underline cursor-pointer"
+              >
+                Terms & Privacy Policy
+              </button>
             </div>
           </div>
 
@@ -6113,9 +5493,34 @@ const QUICK_TIPS_POOL = [
   }
 ];
 
+
 const App = () => {
 
-  
+const [globalTimers, setGlobalTimers] = useState([]); // [{ id, label, remaining, duration }]
+const [pinnedRecipes, setPinnedRecipes] = useState([]); // Array of active recipe objects in tandem mode
+useEffect(() => {
+    let interval;
+    if (globalTimers.length > 0) {
+      interval = setInterval(() => {
+        setGlobalTimers((prevTimers) =>
+          prevTimers
+            .map((t) => {
+              if (t.remaining <= 1) {
+                alert(`⏰ Timer Finished: ${t.label}!`);
+                return null;
+              }
+              return { ...t, remaining: t.remaining - 1 };
+            })
+            .filter(Boolean)
+        );
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [globalTimers]);
+
+
+const [showLegalModal, setShowLegalModal] = useState(false);
+const [showGuidelinesModal, setShowGuidelinesModal] = useState(false);
 
 const [userId, setUserId] = useState(null);
   const [customId, setCustomId] = useState(
@@ -6666,6 +6071,26 @@ const handleBulkAdd = async (e) => {
   const handleAdminToggle = (status) => {
     setIsAdmin(status);
   };
+
+  useEffect(() => {
+    let interval;
+    if (globalTimers.length > 0) {
+      interval = setInterval(() => {
+        setGlobalTimers((prevTimers) =>
+          prevTimers
+            .map((t) => {
+              if (t.remaining <= 1) {
+                alert(`⏰ Timer Finished: ${t.label}!`);
+                return null; // Remove finished timer
+              }
+              return { ...t, remaining: t.remaining - 1 };
+            })
+            .filter(Boolean)
+        );
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [globalTimers]);
 
   useEffect(() => {
     if (!effectiveUserId || !db) return;
@@ -7334,6 +6759,26 @@ const handleBulkAdd = async (e) => {
       });
     }
   };
+
+  const calculatePantryMatch = (recipeIngredients, inventory) => {
+  if (!recipeIngredients || recipeIngredients.length === 0) return 100;
+  
+  const pantryItems = new Set((inventory || []).map(item => (item.name || "").toLowerCase().trim()));
+  
+  let matchedCount = 0;
+  recipeIngredients.forEach(ing => {
+    const ingName = (typeof ing === 'string' ? ing : (ing.name || ing.item || "")).toLowerCase().trim();
+    const isPresent = Array.from(pantryItems).some(pantryItem => 
+      pantryItem.includes(ingName) || ingName.includes(pantryItem)
+    );
+    if (isPresent) {
+      matchedCount++;
+    }
+  });
+
+  return Math.round((matchedCount / recipeIngredients.length) * 100);
+};
+
   const deleteGroceryItem = async (id) =>
     deleteDoc(
       doc(db, `/artifacts/${appId}/users/${effectiveUserId}/groceryList`, id)
@@ -7497,6 +6942,11 @@ const handleBulkAdd = async (e) => {
         userProfile={userProfile}
         onUpdateEquipment={handleUpdateEquipment}
         effectiveUserId={effectiveUserId}
+        globalTimers={globalTimers}
+        setGlobalTimers={setGlobalTimers}
+        pinnedRecipes={pinnedRecipes}
+        setPinnedRecipes={setPinnedRecipes}
+        askAIChef={askAIChef}
       />
     );
   if (viewingProfile)
@@ -7526,6 +6976,7 @@ const handleBulkAdd = async (e) => {
         onLogin={handleLogin}
       />
     );
+    
 
   // 🛑 GLOBAL AUTH GATE: Lock down app access for unauthenticated visitors
   if (!isDemoAuthenticated) {
@@ -7584,7 +7035,8 @@ const handleBulkAdd = async (e) => {
       </div>
     );
   }
-
+  
+  // Main App component
   return (
     <div className="flex flex-col h-screen bg-gray-50 md:ml-64 max-w-full md:max-w-none shadow-2xl overflow-hidden relative">
       <div className="p-4 pt-8 bg-white border-b flex items-center justify-between z-20">
@@ -8288,7 +7740,7 @@ const handleBulkAdd = async (e) => {
                       ))}
                     </div>
                   </div>
-                  {/* 👉 LANDMARK: Advanced Recipe Search & Generation Filters Toolbar */}
+                  {/* Advanced Recipe Search & Generation Filters Toolbar */}
                   <div className="bg-white p-4 rounded-2xl border border-gray-200 shadow-sm space-y-3">
                     <div className="flex justify-between items-center">
                       <span className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
@@ -8400,20 +7852,95 @@ const handleBulkAdd = async (e) => {
                   </div>
 
                   {/* DESKTOP 2-COLUMN RECIPE GRID */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                    {aiRecipes.map((r) => (
-                      <RecipeCard
-                        key={r.id}
-                        recipe={r}
-                        onClick={() => handleSetActiveRecipe(r)}
-                        onAddToPlan={handleAddToPlan}
-                        isSaved={savedRecipes.some((s) => s.title === r.title)}
-                        onToggleSave={handleToggleSave}
-                        onVote={handleVote}
-                        userNote={recipeNotes[r.id || r.firestoreId]} // pass private note
-                      />
-                    ))}
-                  </div>
+                  {/* 👉 CATEGORIZED HYBRID RESULTS SECTIONS (#34) */}
+                  {(() => {
+                    const allDiscoverRecipes = [...aiRecipes, ...communityRecipes];
+                    const perfectMatches = allDiscoverRecipes.filter(r => calculatePantryMatch(r.allIngredients, inventory) === 100);
+                    const quickMatches = allDiscoverRecipes.filter(r => {
+                      const m = calculatePantryMatch(r.allIngredients, inventory);
+                      return m >= 50 && m < 100;
+                    });
+                    const otherDiscoveries = allDiscoverRecipes.filter(r => calculatePantryMatch(r.allIngredients, inventory) < 50);
+
+                    return (
+                      <div className="space-y-6 pt-2">
+                        {perfectMatches.length > 0 && (
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2 border-b border-gray-100 pb-2">
+                              <CheckCircle className="w-4 h-4 text-green-600" />
+                              <h4 className="font-black text-xs text-green-800 uppercase tracking-wider">
+                                Ready to Cook (100% Pantry Match)
+                              </h4>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              {perfectMatches.map((r) => (
+                                <RecipeCard
+                                  key={r.id}
+                                  recipe={{ ...r, matchPercentage: 100 }}
+                                  onClick={() => handleSetActiveRecipe(r)}
+                                  onAddToPlan={handleAddToPlan}
+                                  isSaved={savedRecipes.some((s) => s.title === r.title)}
+                                  onToggleSave={handleToggleSave}
+                                  onVote={handleVote}
+                                  userNote={recipeNotes[r.id || r.firestoreId]}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {quickMatches.length > 0 && (
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2 border-b border-gray-100 pb-2">
+                              <Zap className="w-4 h-4 text-amber-500" />
+                              <h4 className="font-black text-xs text-amber-800 uppercase tracking-wider">
+                                Quick Match (Need 1–2 Items)
+                              </h4>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              {quickMatches.map((r) => (
+                                <RecipeCard
+                                  key={r.id}
+                                  recipe={{ ...r, matchPercentage: calculatePantryMatch(r.allIngredients, inventory) }}
+                                  onClick={() => handleSetActiveRecipe(r)}
+                                  onAddToPlan={handleAddToPlan}
+                                  isSaved={savedRecipes.some((s) => s.title === r.title)}
+                                  onToggleSave={handleToggleSave}
+                                  onVote={handleVote}
+                                  userNote={recipeNotes[r.id || r.firestoreId]}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {otherDiscoveries.length > 0 && (
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2 border-b border-gray-100 pb-2">
+                              <Zap className="w-4 h-4 text-indigo-600" />
+                              <h4 className="font-black text-xs text-indigo-800 uppercase tracking-wider">
+                                AI Discovery & Web Results
+                              </h4>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              {otherDiscoveries.map((r) => (
+                                <RecipeCard
+                                  key={r.id}
+                                  recipe={{ ...r, matchPercentage: calculatePantryMatch(r.allIngredients, inventory) }}
+                                  onClick={() => handleSetActiveRecipe(r)}
+                                  onAddToPlan={handleAddToPlan}
+                                  isSaved={savedRecipes.some((s) => s.title === r.title)}
+                                  onToggleSave={handleToggleSave}
+                                  onVote={handleVote}
+                                  userNote={recipeNotes[r.id || r.firestoreId]}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   <h3 className="font-bold text-gray-400 text-xs uppercase tracking-widest mt-6">
                     Community
@@ -8894,6 +8421,8 @@ const handleBulkAdd = async (e) => {
               isDemoAuthenticated={isDemoAuthenticated}
               onShowLogin={() => setShowLoginModal(true)}
               onRestartTour={() => setShowOnboarding(true)}
+              onOpenGuidelines={() => setShowGuidelinesModal(true)}
+              onOpenLegal={() => setShowLegalModal(true)}
             />
 
             {/* Cooked Nutrition Analytics Report View */}
@@ -9260,6 +8789,14 @@ const handleBulkAdd = async (e) => {
           )}
         </div>
       </div>
+
+      {showLegalModal && (
+        <LegalModal onClose={() => setShowLegalModal(false)} />
+      )}
+
+      {showGuidelinesModal && (
+        <CommunityGuidelinesModal onClose={() => setShowGuidelinesModal(false)} />
+      )}
 
       {/* 👉 LANDMARK: Soft-Gate Modal Render */}
       <SoftGateModal

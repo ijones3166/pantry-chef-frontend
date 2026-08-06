@@ -13,7 +13,7 @@ export default function BrandedRedirectModal({ isOpen, onClose, partnerData }) {
 
   return (
     <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-in fade-in">
-      <div className="bg-slate-900 border border-slate-800 text-white w-full max-w-md rounded-3xl p-6 shadow-2xl relative space-y-5 animate-in slide-in-from-bottom">
+      <div className="bg-slate-900 border border-slate-800 text-white w-full max-w-md rounded-3xl p-6 shadow-2xl relative space-y-5">
         
         {/* Close Button */}
         <button 
