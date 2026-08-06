@@ -3254,11 +3254,13 @@ const RecipeDetailView = ({
   onSaveNote,
   userProfile,
   onUpdateEquipment,
+  effectiveUserId,
 }) => {
   const baseServings = recipe.servings || 4;
   const [servings, setServings] = useState(baseServings);
   const [cookingMode, setCookingMode] = useState(false);
   const [showPlanModal, setShowPlanModal] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false); //
   const [selectedMissing, setSelectedMissing] = useState([]);
   const [showConverter, setShowConverter] = useState(false);
   const [ovenStatus, setOvenStatus] = useState("off");
@@ -3405,8 +3407,17 @@ const RecipeDetailView = ({
           >
             <Calendar className="w-4 h-4" />
           </button>
+          {/* 👉 REPORT RECIPE BUTTON */}
+          <button
+            onClick={() => setShowReportModal(true)}
+            className="p-2 text-red-500 bg-red-50 hover:bg-red-100 rounded-full cursor-pointer transition-colors"
+            title="Report Recipe"
+          >
+            <AlertOctagon className="w-4 h-4" />
+          </button>
         </div>
       </div>
+
       {showConverter && (
         <div className="absolute top-16 left-0 right-0 z-20 p-4 bg-white/95 backdrop-blur-sm border-b border-indigo-100 shadow-xl">
           <div className="flex justify-between items-center mb-2">
@@ -3906,6 +3917,16 @@ const RecipeDetailView = ({
           </div>
         </div>
       )}
+
+      {showReportModal && (
+        <ReportRecipeModal
+          recipe={recipe}
+          onClose={() => setShowReportModal(false)}
+          effectiveUserId={effectiveUserId}
+          db={db}
+          appId={appId}
+        />
+      )}
     </div>
   );
 };
@@ -3926,6 +3947,7 @@ const AdminDashboard = ({
   const [adminView, setAdminView] = useState("impact");
   const [feedbackLogs, setFeedbackLogs] = useState([]);
   const [visitorLogs, setVisitorLogs] = useState([]);
+  const [waitlistUsers, setWaitlistUsers] = useState([]);
 
   // Fetch visitors automatically for the Admin
   useEffect(() => {
@@ -3954,6 +3976,32 @@ const AdminDashboard = ({
     });
     return () => unsub();
   }, []);
+
+  useEffect(() => {
+    if (!db || !isAdmin) return;
+    const q = query(
+      collection(db, `/artifacts/${appId}/public/data/waitlist`),
+      orderBy("requestedAt", "desc")
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setWaitlistUsers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, [db, isAdmin, appId]);
+
+  const [recipeReports, setRecipeReports] = useState([]);
+
+  useEffect(() => {
+    if (!db || !isAdmin) return;
+    const q = query(
+      collection(db, `/artifacts/${appId}/public/data/recipeReports`),
+      orderBy("timestamp", "desc")
+    );
+    const unsub = onSnapshot(q, (snap) => {
+      setRecipeReports(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsub();
+  }, [db, isAdmin, appId]);
 
   const mockNetworkData = {
     totalUsers: 12450,
@@ -4028,12 +4076,38 @@ const AdminDashboard = ({
               )}
             </button>
             <button
+              onClick={() => setAdminView("reports")}
+              className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 ${
+                adminView === "reports" ? "bg-indigo-600" : "bg-gray-800 cursor-pointer"
+              }`}
+            >
+              Reports
+              {recipeReports.filter(r => r.status === "pending").length > 0 && (
+                <span className="bg-red-500 text-white px-1 rounded-full text-[8px]">
+                  {recipeReports.filter(r => r.status === "pending").length}
+                </span>
+              )}
+            </button>
+            <button
               onClick={() => setAdminView("visitors")}
               className={`px-2 py-1 rounded text-[10px] font-bold ${
                 adminView === "visitors" ? "bg-indigo-600" : "bg-gray-800 cursor-pointer"
               }`}
             >
               Visitors ({visitorLogs.length})
+            </button>
+            <button
+              onClick={() => setAdminView("waitlist")}
+              className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 ${
+                adminView === "waitlist" ? "bg-indigo-600" : "bg-gray-800 cursor-pointer"
+              }`}
+            >
+              Waitlist
+              {waitlistUsers.filter(u => u.status === "pending").length > 0 && (
+                <span className="bg-amber-500 text-white px-1 rounded-full text-[8px]">
+                  {waitlistUsers.filter(u => u.status === "pending").length}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -4139,7 +4213,95 @@ const AdminDashboard = ({
           </div>
         )}
 
-        
+        {adminView === "reports" && (
+          <div className="space-y-3 animate-in fade-in max-h-96 overflow-y-auto pr-2">
+            {recipeReports.length === 0 ? (
+              <p className="text-xs text-gray-500 text-center py-4">No recipe reports submitted yet.</p>
+            ) : (
+              recipeReports.map((report) => (
+                <div key={report.id} className="bg-white/5 p-4 rounded-xl border border-white/10 space-y-2">
+                  <div className="flex justify-between items-start">
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-500/20 text-red-300">
+                      🚨 {report.reason}
+                    </span>
+                    <span className="text-[9px] text-gray-400">
+                      {report.timestamp?.toDate ? report.timestamp.toDate().toLocaleDateString() : "Just now"}
+                    </span>
+                  </div>
+
+                  <div>
+                    <p className="text-xs font-bold text-white">Recipe: {report.recipeTitle}</p>
+                    {report.details && <p className="text-xs text-gray-300 italic mt-1">"{report.details}"</p>}
+                  </div>
+
+                  <div className="flex gap-2 pt-2 border-t border-white/10">
+                    <button
+                      onClick={async () => {
+                        // Action to delete/hide the reported recipe from community feed
+                        if (report.recipeId && report.recipeId !== "unknown") {
+                          await deleteDoc(doc(db, `/artifacts/${appId}/public/data/userRecipes`, report.recipeId));
+                        }
+                        // Mark report as resolved
+                        await updateDoc(doc(db, `/artifacts/${appId}/public/data/recipeReports`, report.id), { status: "resolved_deleted" });
+                        alert("Recipe removed from community feed.");
+                      }}
+                      className="px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white rounded-lg text-[10px] font-bold cursor-pointer"
+                    >
+                      Delete Recipe
+                    </button>
+                    
+                    <button
+                      onClick={async () => {
+                        // Dismiss report, keep recipe
+                        await updateDoc(doc(db, `/artifacts/${appId}/public/data/recipeReports`, report.id), { status: "dismissed" });
+                        alert("Report dismissed.");
+                      }}
+                      className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded-lg text-[10px] font-bold cursor-pointer"
+                    >
+                      Dismiss Report
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+
+        {adminView === "waitlist" && (
+          <div className="space-y-3 animate-in fade-in max-h-96 overflow-y-auto pr-2">
+            {waitlistUsers.length === 0 ? (
+              <p className="text-xs text-gray-500 text-center py-4">No users on the waitlist.</p>
+            ) : (
+              waitlistUsers.map((candidate) => (
+                <div key={candidate.id} className="bg-white/5 p-4 rounded-xl border border-white/10 flex justify-between items-center">
+                  <div>
+                    <p className="text-xs font-bold text-white">{candidate.displayName} ({candidate.email})</p>
+                    <p className="text-[9px] text-gray-400 font-mono">UID: {candidate.uid}</p>
+                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded mt-1 inline-block ${candidate.status === 'approved' ? 'bg-green-500/20 text-green-300' : 'bg-amber-500/20 text-amber-300'}`}>
+                      {candidate.status.toUpperCase()}
+                    </span>
+                  </div>
+
+                  {candidate.status === "pending" && (
+                    <button
+                      onClick={async () => {
+                        // Update waitlist document status to approved
+                        await updateDoc(doc(db, `/artifacts/${appId}/public/data/waitlist`, candidate.id), {
+                          status: "approved",
+                          approvedAt: serverTimestamp()
+                        });
+                        alert(`Approved ${candidate.email}! (Note: Set custom claim {approved: true} via your backend script to fully grant app access).`);
+                      }}
+                      className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer transition-colors"
+                    >
+                      Approve Access
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        )}
 
         {/* NEW: Feedback Viewer */}
         {adminView === "feedback" && (
@@ -4881,6 +5043,95 @@ const VoiceInputWidget = ({ onVoiceSubmit, isProcessing, layout = "full" }) => {
           {isListening ? (interimText || "Listening...") : isProcessing ? "Parsing inventory..." : "Tap to speak"}
         </div>
       )}
+    </div>
+  );
+};
+
+const ReportRecipeModal = ({ recipe, onClose, effectiveUserId, db, appId }) => {
+  const [reason, setReason] = useState("Inappropriate Content");
+  const [details, setDetails] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+
+  const handleReportSubmit = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await addDoc(collection(db, `/artifacts/${appId}/public/data/recipeReports`), {
+        recipeId: recipe.id || recipe.firestoreId || "unknown",
+        recipeTitle: recipe.title,
+        recipeAuthor: recipe.authorName || "Unknown",
+        reportedBy: effectiveUserId || "anonymous",
+        reason,
+        details: details.trim(),
+        timestamp: serverTimestamp(),
+        status: "pending"
+      });
+      setSubmitted(true);
+      setTimeout(() => onClose(), 2000);
+    } catch (err) {
+      console.error("Failed to submit report:", err);
+      alert("Error submitting report. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[75] flex items-center justify-center p-4 animate-in fade-in">
+      <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl space-y-4 animate-in slide-in-from-bottom">
+        <div className="flex justify-between items-center border-b pb-2">
+          <h3 className="font-bold text-base text-gray-900 flex items-center gap-2">
+            <AlertOctagon className="w-5 h-5 text-red-500" /> Report Recipe
+          </h3>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-full cursor-pointer">
+            <X className="w-5 h-5 text-gray-400" />
+          </button>
+        </div>
+
+        {submitted ? (
+          <div className="text-center py-6 space-y-2">
+            <CheckCircle className="w-12 h-12 text-green-500 mx-auto" />
+            <h4 className="font-bold text-gray-800">Report Received</h4>
+            <p className="text-xs text-gray-500">Thank you for helping keep our community safe.</p>
+          </div>
+        ) : (
+          <form onSubmit={handleReportSubmit} className="space-y-3">
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Reason for Flagging</label>
+              <select
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium outline-none cursor-pointer"
+              >
+                <option value="Inappropriate Content">Inappropriate or Offensive Content</option>
+                <option value="Dangerous Instructions">Dangerous Cooking Instructions / Hazard</option>
+                <option value="Copyright Infringement">Copyright Infringement / Stolen Recipe</option>
+                <option value="Spam / Misleading">Spam or Misleading Information</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Additional Details (Optional)</label>
+              <textarea
+                value={details}
+                onChange={(e) => setDetails(e.target.value)}
+                placeholder="Provide any extra context..."
+                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500 h-20 resize-none"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={submitting}
+              className="w-full py-3 bg-red-600 hover:bg-red-700 text-white font-bold text-xs rounded-xl shadow-md transition-colors cursor-pointer flex items-center justify-center gap-2"
+            >
+              {submitting ? <Loader className="w-4 h-4 animate-spin" /> : <AlertOctagon className="w-4 h-4" />}
+              Submit Report for Review
+            </button>
+          </form>
+        )}
+      </div>
     </div>
   );
 };
@@ -6309,24 +6560,32 @@ const handleBulkAdd = async (e) => {
   // Trigger Onboarding on Login if Not Completed
   const handleLogin = async () => {
     setShowLoginModal(false);
-    setIsDemoAuthenticated(true);
-    
-    // 👉 Log visitor session to Firestore for tracking who accesses the app
+  
+
     if (auth?.currentUser && db) {
-      try {
-        await addDoc(collection(db, `/artifacts/${appId}/public/data/visitorLogs`), {
-          uid: auth.currentUser.uid,
-          email: auth.currentUser.email || "Google/Email User",
-          displayName: auth.currentUser.displayName || "Chef",
-          lastLogin: serverTimestamp(),
-          userAgent: navigator.userAgent
-        });
-      } catch (err) {
-        console.error("Failed to log visitor session:", err);
+      const user = auth.currentUser;
+      
+      // Check custom claims for approval status
+      const tokenResult = await user.getIdTokenResult(true);
+      const isUserAdmin = tokenResult.claims.admin === true;
+      const isUserApproved = tokenResult.claims.approved === true;
+
+      // If not admin and not approved, register them to the waitlist doc if missing
+      if (!isUserAdmin && !isUserApproved) {
+        const waitlistRef = doc(db, `/artifacts/${appId}/public/data/waitlist`, user.uid);
+        await setDoc(waitlistRef, {
+          uid: user.uid,
+          email: user.email || "User",
+          displayName: user.displayName || "Chef Candidate",
+          status: "pending",
+          requestedAt: serverTimestamp()
+        }, { merge: true });
       }
     }
 
-
+    setIsDemoAuthenticated(true);
+    setNotification("🎉 Successfully signed in!");
+    setTimeout(() => setNotification(null), 3000);
 
     if (!localStorage.getItem("pantry_chef_onboarded")) {
       setShowOnboarding(true);
@@ -7237,6 +7496,7 @@ const handleBulkAdd = async (e) => {
         onSaveNote={handleSaveRecipeNote}
         userProfile={userProfile}
         onUpdateEquipment={handleUpdateEquipment}
+        effectiveUserId={effectiveUserId}
       />
     );
   if (viewingProfile)
@@ -7284,6 +7544,41 @@ const handleBulkAdd = async (e) => {
             className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg transition-colors flex items-center justify-center gap-2 cursor-pointer"
           >
             <LogIn className="w-4 h-4" /> Sign In / Create Account
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // 🛑 WAITLIST & APPROVAL GATE
+  if (isDemoAuthenticated && !isAdmin) {
+    // We can check user approval state from a local state or token claim
+    // For safety, let's block unapproved non-admin users with this waitlist screen:
+    return (
+      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
+        <div className="max-w-md w-full bg-gray-800 rounded-3xl shadow-2xl p-8 text-center border border-gray-700 space-y-4">
+          <div className="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto shadow-inner">
+            <Clock className="w-8 h-8 animate-pulse" />
+          </div>
+          <div className="space-y-1">
+            <h1 className="text-2xl font-black text-white">You're on the Waitlist!</h1>
+            <p className="text-xs text-gray-400 leading-relaxed">
+              PantryChef is currently in private beta. Your account has been registered and placed in our approval queue. We'll unlock access as soon as your spot opens up.
+            </p>
+          </div>
+          
+          <div className="bg-gray-900/60 p-3 rounded-2xl border border-gray-700/50 text-[11px] text-gray-400">
+            Status: <span className="text-amber-400 font-bold uppercase tracking-wider">Pending Review</span>
+          </div>
+
+          <button
+            onClick={async () => {
+              if (auth) await signOut(auth);
+              window.location.reload();
+            }}
+            className="w-full py-3 bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
+          >
+            Sign Out
           </button>
         </div>
       </div>
