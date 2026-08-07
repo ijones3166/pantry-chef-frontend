@@ -7083,37 +7083,42 @@ const handleBulkAdd = async (e) => {
 
   // 🛑 WAITLIST & APPROVAL GATE
   if (isDemoAuthenticated && !isAdmin) {
-    // We can check user approval state from a local state or token claim
-    // For safety, let's block unapproved non-admin users with this waitlist screen:
-    return (
-      <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
-        <div className="max-w-md w-full bg-gray-800 rounded-3xl shadow-2xl p-8 text-center border border-gray-700 space-y-4">
-          <div className="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto shadow-inner">
-            <Clock className="w-8 h-8 animate-pulse" />
-          </div>
-          <div className="space-y-1">
-            <h1 className="text-2xl font-black text-white">You're on the Waitlist!</h1>
-            <p className="text-xs text-gray-400 leading-relaxed">
-              PantryChef is currently in private beta. Your account has been registered and placed in our approval queue. We'll unlock access as soon as your spot opens up.
-            </p>
-          </div>
-          
-          <div className="bg-gray-900/60 p-3 rounded-2xl border border-gray-700/50 text-[11px] text-gray-400">
-            Status: <span className="text-amber-400 font-bold uppercase tracking-wider">Pending Review</span>
-          </div>
+    // Check if approved in Firestore database
+    // (You can store approval state in a local or real-time state variable tied to the waitlist collection)
+    const userWaitlistEntry = waitlistUsers.find(u => u.uid === auth.currentUser?.uid);
+    const isApprovedInDb = userWaitlistEntry?.status === "approved";
 
-          <button
-            onClick={async () => {
-              if (auth) await signOut(auth);
-              window.location.reload();
-            }}
-            className="w-full py-3 bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
-          >
-            Sign Out
-          </button>
+    if (!isApprovedInDb) {
+      return (
+        <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
+          <div className="max-w-md w-full bg-gray-800 rounded-3xl shadow-2xl p-8 text-center border border-gray-700 space-y-4">
+            <div className="w-16 h-16 bg-amber-500/20 text-amber-400 rounded-full flex items-center justify-center mx-auto shadow-inner">
+              <Clock className="w-8 h-8 animate-pulse" />
+            </div>
+            <div className="space-y-1">
+              <h1 className="text-2xl font-black text-white">You're on the Waitlist!</h1>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                PantryChef is currently in private beta. Your account has been registered and placed in our approval queue. We'll unlock access as soon as your spot opens up.
+              </p>
+            </div>
+            
+            <div className="bg-gray-900/60 p-3 rounded-2xl border border-gray-700/50 text-[11px] text-gray-400">
+              Status: <span className="text-amber-400 font-bold uppercase tracking-wider">Pending Review</span>
+            </div>
+
+            <button
+              onClick={async () => {
+                if (auth) await signOut(auth);
+                window.location.reload();
+              }}
+              className="w-full py-3 bg-gray-700 hover:bg-gray-600 text-white font-bold text-xs rounded-xl transition-colors cursor-pointer"
+            >
+              Sign Out
+            </button>
+          </div>
         </div>
-      </div>
-    );
+      );
+    }
   }
   
   // Main App component
