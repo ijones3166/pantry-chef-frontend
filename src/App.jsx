@@ -1,3 +1,5 @@
+import ReverseSchedulerModal from './components/ReverseSchedulerModal';
+import BatchCookingModal from './components/BatchCookingModal';
 import CookingMode from './components/CookingMode';
 import ConverterWidget from './components/ConverterWidget';
 import KitchenGuide from './components/KitchenGuide';
@@ -2608,6 +2610,7 @@ const RecipeDetailView = ({
   pinnedRecipes,     
   setPinnedRecipes,
   askAIChef,
+  onOpenBatchModal,
 }) => {
   const baseServings = recipe.servings || 4;
   const [servings, setServings] = useState(baseServings);
@@ -2692,6 +2695,7 @@ const RecipeDetailView = ({
         pinnedRecipes={pinnedRecipes}
         setPinnedRecipes={setPinnedRecipes}
         askAIChef={askAIChef}
+        onOpenReverseScheduler={onOpenReverseScheduler}
       />
     );
   const authorTitle = recipe.authorName ? `${recipe.authorName}'s Recommended Equipment` : "Recommended Equipment";
@@ -3156,6 +3160,13 @@ const RecipeDetailView = ({
             className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
           >
             <Play className="w-5 h-5" /> Start Cooking Mode
+          </button>
+          {/* 👉 NEW: Batch Prep Button */}
+          <button
+            onClick={() => onOpenBatchModal(recipe)}
+            className="w-full py-3.5 bg-gradient-to-r from-green-600 to-teal-600 text-white rounded-2xl font-bold shadow-md flex items-center justify-center gap-2 active:scale-95 transition-all cursor-pointer"
+          >
+            <Zap className="w-4 h-4 text-amber-300" /> Cook Once, Eat Thrice (Batch Prep)
           </button>
           <button
             onClick={() => {
@@ -5416,6 +5427,7 @@ const IncompleteProfileBanner = ({ profile, onCompleteProfile }) => {
 };
 
 
+
 // 👉 LANDMARK: Dynamic Quick Tips Data Pool & State (#64)
 // 👉 LANDMARK: Expanded Dynamic Quick Tips Data Pool (#64)
 const QUICK_TIPS_POOL = [
@@ -5492,6 +5504,7 @@ const QUICK_TIPS_POOL = [
     text: "Season your food in layers throughout the cooking process rather than all at once at the very end."
   }
 ];
+
 
 
 const App = () => {
@@ -5668,6 +5681,7 @@ const [userId, setUserId] = useState(null);
   const [aiRecipes, setAiRecipes] = useState([]);
   const [activeRecipe, setActiveRecipe] = useState(null);
   const [cookingMode, setCookingMode] = useState(false);
+  const [batchModalRecipe, setBatchModalRecipe] = useState(null); // 👉 Batch Cooking Modal State
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [newItemName, setNewItemName] = useState("");
@@ -5738,6 +5752,7 @@ const handleBulkAdd = async (e) => {
   const [systemNotification, setSystemNotification] = useState(null);
   const [isDemoAuthenticated, setIsDemoAuthenticated] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const [showReverseScheduler, setShowReverseScheduler] = useState(false);
 
   // Gated Onboarding State (Logged-In Users Only)
   const [showOnboarding, setShowOnboarding] = useState(() => {
@@ -5821,6 +5836,23 @@ const handleBulkAdd = async (e) => {
     setTimeout(() => setNotification(null), 3000);
   };
 
+  const handleStartScheduledTimers = (scheduledDishes, targetDate) => {
+  const now = new Date();
+  const newTimers = scheduledDishes.map((dish) => {
+    const diffSeconds = Math.max(10, Math.floor((dish.startTime.getTime() - now.getTime()) / 1000));
+    return {
+      id: Date.now() + Math.random(),
+      label: `Start: ${dish.title}`,
+      remaining: diffSeconds,
+      duration: diffSeconds
+    };
+  });
+
+  setGlobalTimers((prev) => [...prev, ...newTimers]);
+  setNotification(`⏰ Queued start timers for ${scheduledDishes.length} dishes!`);
+  setTimeout(() => setNotification(null), 4000);
+};
+
   // NEW: URL Recipe Ingestor Logic
   // State to manage the duplicate prompt modal
   const [duplicateMatch, setDuplicateMatch] = useState(null);
@@ -5898,7 +5930,54 @@ const handleBulkAdd = async (e) => {
     }
   };
 
+  const handleExecuteBatchPrep = async (batchData) => {
+    const { recipe, multiplier, totalYieldServings, leftoverPortions, targetDays, storeInFreezer } = batchData;
+    setLoading(true);
+    setStatus("Syncing batch schedule & inventory...");
 
+    try {
+      const batch = writeBatch(db);
+
+      // 1. Add leftover meal plan entries for each target day
+      targetDays.forEach((day) => {
+        const planRef = doc(collection(db, `/artifacts/${appId}/users/${effectiveUserId}/mealPlan`));
+        batch.set(planRef, {
+          day: day,
+          type: "Dinner (Leftover)",
+          recipeTitle: `${recipe.title} (Prepped Batch)`,
+          recipeId: recipe.id || null,
+          isAI: recipe.isAI || false,
+          mealTime: "18:00",
+          prepTime: "5 mins (Reheat)",
+          timestamp: serverTimestamp(),
+        });
+      });
+
+      // 2. Sync leftover surplus back into inventory (Freezer / Pantry)
+      const invRef = doc(collection(db, `/artifacts/${appId}/users/${effectiveUserId}/inventory`));
+      batch.set(invRef, {
+        name: `${recipe.title} (Prepped Portions)`,
+        quantity: leftoverPortions,
+        unit: "portions",
+        location: storeInFreezer ? "Freezer" : "Fridge",
+        category: "Prepared Meals",
+        expiryDate: getTimestampInDays(storeInFreezer ? 60 : 7),
+        timestamp: serverTimestamp(),
+      });
+
+      await batch.commit();
+
+      setNotification(`⚡ Batch prep complete! Mapped ${leftoverPortions} leftover portions to ${targetDays.join(", ")}.`);
+      setTimeout(() => setNotification(null), 4000);
+      setBatchModalRecipe(null); // Close modal on success
+    } catch (err) {
+      console.error("Batch prep error:", err);
+      setNotification("❌ Error executing batch prep.");
+      setTimeout(() => setNotification(null), 3000);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleVoiceShoppingSubmit = async (transcript) => {
   if (!transcript.trim() || isVoiceProcessing) return;
@@ -6947,6 +7026,7 @@ const handleBulkAdd = async (e) => {
         pinnedRecipes={pinnedRecipes}
         setPinnedRecipes={setPinnedRecipes}
         askAIChef={askAIChef}
+        onOpenBatchModal={(recipe) => setBatchModalRecipe(recipe)}
       />
     );
   if (viewingProfile)
@@ -8816,6 +8896,24 @@ const handleBulkAdd = async (e) => {
           handleUrlIngest(null, true); // Forces upload, bypassing duplicate check
         }}
       />
+
+      {/* 👉 Render Batch Cooking Modal */}
+      {batchModalRecipe && (
+        <BatchCookingModal
+          recipe={batchModalRecipe}
+          inventory={inventory}
+          onClose={() => setBatchModalRecipe(null)}
+          onSaveBatch={handleExecuteBatchPrep}
+        />
+      )}
+
+      {showReverseScheduler && (
+      <ReverseSchedulerModal
+        pinnedRecipes={pinnedRecipes}
+        onClose={() => setShowReverseScheduler(false)}
+        onStartScheduledTimers={handleStartScheduledTimers}
+      />
+    )}
 
       <style
         dangerouslySetInnerHTML={{

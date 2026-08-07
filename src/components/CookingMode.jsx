@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from "react";
-import { X, List, BookOpen, AlarmClock, TimerIcon, ChevronRight, ChefHat, Pin } from "lucide-react";
+import ReverseSchedulerModal from './ReverseSchedulerModal';
+import React, { useState, useEffect, useRef } from "react";
+import { X, List, BookOpen, AlarmClock, TimerIcon, ChevronRight, ChefHat, Pin, Mic, MicOff, Volume2 } from "lucide-react";
 import ConverterWidget from './ConverterWidget';
 import KitchenGuide from './KitchenGuide';
 
@@ -11,14 +12,16 @@ export default function CookingMode({
   setGlobalTimers = () => {}, 
   pinnedRecipes = [], 
   setPinnedRecipes = () => {},
-  askAIChef 
+  askAIChef,
+  onOpenReverseScheduler
 }) {
   const [activeRecipe, setActiveRecipe] = useState(recipe);
   const [step, setStep] = useState(0);
   const [activeServings, setActiveServings] = useState(initialServings || recipe?.servings || 4);
   const [showUtilityDrawer, setShowUtilityDrawer] = useState(false);
   const [showMenuOverlay, setShowMenuOverlay] = useState(false);
-  const [splitScreenMode, setSplitScreenMode] = useState(false); // 👉 Multi-dish side-by-side view toggle
+  const [splitScreenMode, setSplitScreenMode] = useState(false);
+  const [showReverseScheduler, setShowReverseScheduler] = useState(false); 
   
   // Chat Assistant States
   const [chatOpen, setChatOpen] = useState(false);
@@ -26,7 +29,14 @@ export default function CookingMode({
   const [chatLog, setChatLog] = useState([]);
   const [aiThinking, setAiThinking] = useState(false);
 
-  // 👉 #8: Screen Wake Lock API Implementation
+  // 👉 Hands-Free Voice Control & TTS States
+  const [isVoiceActive, setIsVoiceActive] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const recognitionRef = useRef(null);
+
+  
+
+  // 👉 Screen Wake Lock API Implementation
   useEffect(() => {
     let wakeLock = null;
     const requestWakeLock = async () => {
@@ -45,26 +55,6 @@ export default function CookingMode({
     };
   }, []);
 
-  // pinning
-  const isCurrentPinned = pinnedRecipes.some(p => p.title === activeRecipe.title);
-
-  const togglePinCurrentRecipe = () => {
-    setPinnedRecipes(prev => {
-      const alreadyPinned = prev.some(p => p.title === activeRecipe.title);
-      if (alreadyPinned) {
-        // Unpin it
-        return prev.filter(p => p.title !== activeRecipe.title);
-      } else {
-        // Cap at 3 pinned recipes
-        if (prev.length >= 3) {
-          alert("You can only pin up to 3 dishes at a time.");
-          return prev;
-        }
-        return [...prev, activeRecipe];
-      }
-    });
-  };
-
   const rawInstructions = activeRecipe?.instructions || "1. Prepare ingredients as directed.\n2. Cook until done.";
   const steps = typeof rawInstructions === 'string' 
     ? (rawInstructions.includes("\n")
@@ -73,6 +63,184 @@ export default function CookingMode({
     : ["1. Prepare ingredients as directed."];
 
   const currentStepText = steps[step] || steps[0] || "Prepare ingredients as directed.";
+
+  // 👉 TTS Step Reader with Audio Ducking (cancels prior audio utterance)
+  const speakCurrentStep = (textToSpeak) => {
+    if (!('speechSynthesis' in window)) return;
+    
+    window.speechSynthesis.cancel();
+
+    const cleanText = textToSpeak.replace(/^\d+\.\s*/, ''); 
+    const utterance = new SpeechSynthesisUtterance(`Step ${step + 1}: ${cleanText}`);
+    
+    // 👉 Attach selected voice persona
+    if (selectedVoiceUri && availableVoices.length > 0) {
+      const chosenVoice = availableVoices.find(v => v.voiceURI === selectedVoiceUri);
+      if (chosenVoice) utterance.voice = chosenVoice;
+    }
+
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // 👉 Voice Persona States
+  const [availableVoices, setAvailableVoices] = useState([]);
+  const [selectedVoiceUri, setSelectedVoiceUri] = useState("");
+
+  // Load available system/browser voices
+  useEffect(() => {
+    const loadVoices = () => {
+      if (!('speechSynthesis' in window)) return;
+      const voices = window.speechSynthesis.getVoices();
+      setAvailableVoices(voices);
+      // Default to the first English voice if none selected
+      if (voices.length > 0 && !selectedVoiceUri) {
+        const defaultVoice = voices.find(v => v.lang.startsWith('en')) || voices[0];
+        setSelectedVoiceUri(defaultVoice.voiceURI);
+      }
+    };
+
+    loadVoices();
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.onvoiceschanged = loadVoices;
+    }
+  }, []);
+
+  // Auto-read step on change if voice navigation is toggled on
+  useEffect(() => {
+    if (isVoiceActive) {
+      speakCurrentStep(currentStepText);
+    }
+    return () => {
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    };
+  }, [step, activeRecipe]);
+
+  // 👉 Hands-Free Speech Recognition Setup
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = true;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+
+    recognition.onresult = (event) => {
+      const lastResultIndex = event.results.length - 1;
+      const transcript = event.results[lastResultIndex][0].transcript.toLowerCase().trim();
+      console.log("Voice Command Recognized:", transcript);
+
+      // 1. Navigation Commands
+      if (transcript.includes("next") || transcript.includes("forward")) {
+        setStep((s) => Math.min(steps.length - 1, s + 1));
+      } else if (transcript.includes("previous") || transcript.includes("back") || transcript.includes("last step")) {
+        setStep((s) => Math.max(0, s - 1));
+      } else if (transcript.includes("repeat") || transcript.includes("read again")) {
+        speakCurrentStep(currentStepText);
+      } 
+      
+      // 2. Timer Commands (e.g. "set timer for 5 minutes" or "start 10 minute timer")
+      else if (transcript.includes("timer") || transcript.includes("minute")) {
+        const numMatch = transcript.match(/(\d+)/);
+        const minutes = numMatch ? parseInt(numMatch[1]) : 5;
+        startGlobalTimer(minutes, `${activeRecipe.title} (Voice Timer)`);
+        speakCurrentStep(`Started a timer for ${minutes} minutes.`);
+      }
+
+      // 3. Multi-Dish / Recipe Switching Commands (e.g. "switch to chicken" or "switch recipe")
+      else if (transcript.includes("switch") || transcript.includes("change dish") || transcript.includes("other recipe")) {
+        if (pinnedRecipes.length > 1) {
+          const currentIndex = pinnedRecipes.findIndex(p => p.title === activeRecipe.title);
+          const nextIndex = (currentIndex + 1) % pinnedRecipes.length;
+          setActiveRecipe(pinnedRecipes[nextIndex]);
+          setStep(0);
+          speakCurrentStep(`Switched to recipe: ${pinnedRecipes[nextIndex].title}`);
+        } else {
+          speakCurrentStep("You only have one recipe pinned right now.");
+        }
+      }
+
+      // 4. Servings Adjustment (e.g. "increase servings" or "scale servings to 6")
+      else if (transcript.includes("serving") || transcript.includes("portion")) {
+        const numMatch = transcript.match(/(\d+)/);
+        if (numMatch) {
+          const newServings = parseInt(numMatch[1]);
+          setActiveServings(newServings);
+          speakCurrentStep(`Servings updated to ${newServings}.`);
+        }
+      }
+
+      // 5. Exit Cooking Mode
+      else if (transcript.includes("close") || transcript.includes("exit") || transcript.includes("done cooking")) {
+        onClose();
+      }
+    };
+
+    recognition.onerror = (err) => {
+      console.error("Speech Recognition Error:", err);
+    };
+
+    recognition.onend = () => {
+      // Auto-restart recognition loop if voice mode remains active
+      if (isVoiceActive && recognitionRef.current) {
+        try { recognitionRef.current.start(); } catch (e) {}
+      }
+    };
+
+    recognitionRef.current = recognition;
+
+    return () => {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.stop(); } catch (e) {}
+      }
+    };
+  }, [steps.length, currentStepText]);
+
+  const toggleVoiceMode = () => {
+    if (!('SpeechRecognition' in window || 'webkitSpeechRecognition' in window)) {
+      alert("Speech recognition is not supported in this browser. Try Google Chrome.");
+      return;
+    }
+
+    if (isVoiceActive) {
+      setIsVoiceActive(false);
+      recognitionRef.current?.stop();
+      if ('speechSynthesis' in window) window.speechSynthesis.cancel();
+    } else {
+      setIsVoiceActive(true);
+      try {
+        recognitionRef.current?.start();
+        speakCurrentStep("Voice control activated. Say Next, Previous, or Repeat.");
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  };
+
+  const isCurrentPinned = pinnedRecipes.some(p => p.title === activeRecipe.title);
+
+  const togglePinCurrentRecipe = () => {
+    setPinnedRecipes(prev => {
+      const alreadyPinned = prev.some(p => p.title === activeRecipe.title);
+      if (alreadyPinned) {
+        return prev.filter(p => p.title !== activeRecipe.title);
+      } else {
+        if (prev.length >= 3) {
+          alert("You can only pin up to 3 dishes at a time.");
+          return prev;
+        }
+        return [...prev, activeRecipe];
+      }
+    });
+  };
 
   const startGlobalTimer = (minutes, label) => {
     const newTimer = {
@@ -150,7 +318,6 @@ export default function CookingMode({
       )}
 
       {/* Top Header Controls & Pinned Dishes */}
-      {/* Top Header Controls & Pinned Dishes */}
       <div className="p-3 md:p-4 bg-gray-800 border-b border-gray-700 space-y-3">
         <div className="flex flex-wrap justify-between items-center gap-2">
           
@@ -168,6 +335,35 @@ export default function CookingMode({
             >
               <BookOpen className="w-3.5 h-3.5" /> Cheat Sheets
             </button>
+            
+            {/* 👉 Voice Control / Hands-Free Toggle */}
+            <button
+              onClick={toggleVoiceMode}
+              className={`p-1.5 md:p-2 rounded-lg text-[10px] md:text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors ${
+                isVoiceActive ? "bg-red-600 text-white animate-pulse" : "bg-gray-700 hover:bg-gray-600 text-gray-300"
+              }`}
+              title="Toggle Hands-Free Voice Control & TTS"
+            >
+              {isVoiceActive ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
+              {isVoiceActive ? "Voice Active" : "Voice Control"}
+            </button>
+            {/* 👉 Sous Chef Voice Persona Selector */}
+            {availableVoices.length > 0 && (
+              <select
+                value={selectedVoiceUri}
+                onChange={(e) => setSelectedVoiceUri(e.target.value)}
+                className="bg-gray-700 text-gray-200 text-[10px] md:text-xs font-bold rounded-lg p-1.5 outline-none cursor-pointer border border-gray-600 max-w-[130px] truncate"
+                title="Select Sous Chef Voice"
+              >
+                {availableVoices
+                  .filter(v => v.lang.startsWith('en')) // Filter for English voices (or remove to see all languages)
+                  .map((voice) => (
+                    <option key={voice.voiceURI} value={voice.voiceURI}>
+                      {voice.name} ({voice.lang})
+                    </option>
+                  ))}
+              </select>
+            )}
             <button
               onClick={togglePinCurrentRecipe}
               className={`p-1.5 md:p-2 rounded-lg text-[10px] md:text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors ${
@@ -219,6 +415,15 @@ export default function CookingMode({
             ))}
           </div>
         )}
+
+        {pinnedRecipes.length > 1 && (
+        <button
+            onClick={() => setShowReverseScheduler(true)}
+            className="p-1.5 md:p-2 rounded-lg text-[10px] md:text-xs font-bold flex items-center gap-1 cursor-pointer bg-amber-600 text-white hover:bg-amber-700"
+        >
+            ⏱️ Sync Schedule
+        </button>
+        )}
       </div>
 
       {/* Stacked Vertical Steps Menu Overlay */}
@@ -248,9 +453,7 @@ export default function CookingMode({
                 }`}>
                   {idx + 1}
                 </span>
-                <span className="leading-relaxed flex-1 line-clamp-2 text-ellipsis overflow-hidden text-left">
-                  {sText}
-                </span>
+                <span className="leading-relaxed flex-1 line-clamp-2 text-ellipsis overflow-hidden text-left">{sText}</span>
               </button>
             ))}
           </div>
@@ -281,7 +484,7 @@ export default function CookingMode({
                 <div key={i} className="bg-gray-800 p-6 rounded-3xl border border-gray-700 flex flex-col justify-between text-left shadow-xl">
                   <div>
                     <h4 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-1">{pin.title}</h4>
-                    <p className="text-lg font-medium text-white leading-relaxed mt-4">
+                    <p className="text-lg font-medium text-white leading-relaxed mt-4 line-clamp-3">
                       {pinSteps[0] || pin.instructions}
                     </p>
                   </div>
@@ -296,13 +499,23 @@ export default function CookingMode({
             })}
           </div>
         ) : (
-          <div className="space-y-6 max-w-2xl mx-auto">
+          <div className="space-y-6 max-w-2xl mx-auto relative">
+            {isSpeaking && (
+              <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-indigo-500/20 border border-indigo-400/30 text-indigo-300 px-3 py-1 rounded-full text-[10px] font-bold flex items-center gap-1.5 animate-pulse">
+                <Volume2 className="w-3.5 h-3.5" /> Reading Step...
+              </div>
+            )}
             <span className="text-indigo-400 text-xs font-black uppercase tracking-widest">
               {activeRecipe.title} • Step {step + 1} of {steps.length}
             </span>
             <p className="text-2xl md:text-3xl font-medium leading-relaxed">
               {renderStepWithTimer(currentStepText)}
             </p>
+            {isVoiceActive && (
+              <p className="text-[11px] text-gray-400 italic">
+                🎤 Listening for commands: <strong className="text-indigo-300">"Next"</strong>, <strong className="text-indigo-300">"Previous"</strong>, <strong className="text-indigo-300">"Repeat"</strong>
+              </p>
+            )}
           </div>
         )}
       </div>
@@ -376,6 +589,28 @@ export default function CookingMode({
             </button>
           </form>
         </div>
+      )}
+
+    {showReverseScheduler && (
+        <ReverseSchedulerModal
+          pinnedRecipes={pinnedRecipes}
+          onClose={() => setShowReverseScheduler(false)}
+          onStartScheduledTimers={(scheduledDishes, targetDate) => {
+            // Queue up the timers directly into the global timer state passed down from App
+            const now = new Date();
+            const newTimers = scheduledDishes.map((dish) => {
+              const diffSeconds = Math.max(10, Math.floor((dish.startTime.getTime() - now.getTime()) / 1000));
+              return {
+                id: Date.now() + Math.random(),
+                label: `Start: ${dish.title}`,
+                remaining: diffSeconds,
+                duration: diffSeconds
+              };
+            });
+            setGlobalTimers((prev) => [...prev, ...newTimers]);
+            setShowReverseScheduler(false);
+          }}
+        />
       )}
 
     </div>
