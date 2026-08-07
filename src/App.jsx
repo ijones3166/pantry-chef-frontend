@@ -5757,6 +5757,7 @@ const handleBulkAdd = async (e) => {
   const [isDemoAuthenticated, setIsDemoAuthenticated] = useState(false);
   const [showLoginModal, setShowLoginModal] = useState(false);
   const [showReverseScheduler, setShowReverseScheduler] = useState(false);
+  const [userWaitlistStatus, setUserWaitlistStatus] = useState("pending");
 
   // Gated Onboarding State (Logged-In Users Only)
   const [showOnboarding, setShowOnboarding] = useState(() => {
