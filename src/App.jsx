@@ -516,6 +516,9 @@ const parseAIResponse = (text) => {
   }
 };
 
+
+
+
 const parsePrepTime = (prepTimeString) => {
   if (!prepTimeString) return 30;
   const numbers = prepTimeString.match(/\d+/g);
@@ -2587,6 +2590,7 @@ const MealPlanner = ({ plan, onAddMeal, onDeleteMeal, onGenerateDayPlan, onPlanE
     </div>
   );
 };
+
 
 
 const RecipeDetailView = ({
@@ -6173,6 +6177,16 @@ const handleBulkAdd = async (e) => {
 
   useEffect(() => {
     if (!effectiveUserId || !db) return;
+    const unsub = onSnapshot(doc(db, `/artifacts/${appId}/public/data/waitlist`, effectiveUserId), (docSnap) => {
+      if (docSnap.exists()) {
+        setUserWaitlistStatus(docSnap.data().status || "pending");
+      }
+    });
+    return () => unsub();
+  }, [effectiveUserId, db]);
+
+  useEffect(() => {
+    if (!effectiveUserId || !db) return;
     const unsubs = [
       onSnapshot(
         collection(
@@ -7082,13 +7096,9 @@ const handleBulkAdd = async (e) => {
   }
 
   // 🛑 WAITLIST & APPROVAL GATE
+  // 🛑 WAITLIST & APPROVAL GATE
   if (isDemoAuthenticated && !isAdmin) {
-    // Check if approved in Firestore database
-    // (You can store approval state in a local or real-time state variable tied to the waitlist collection)
-    const userWaitlistEntry = waitlistUsers.find(u => u.uid === auth.currentUser?.uid);
-    const isApprovedInDb = userWaitlistEntry?.status === "approved";
-
-    if (!isApprovedInDb) {
+    if (userWaitlistStatus !== "approved") {
       return (
         <div className="min-h-screen bg-gray-900 flex flex-col items-center justify-center p-4">
           <div className="max-w-md w-full bg-gray-800 rounded-3xl shadow-2xl p-8 text-center border border-gray-700 space-y-4">
