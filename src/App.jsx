@@ -30,6 +30,7 @@ import {
   collectionGroup,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   getFirestore,
   increment,
@@ -3893,13 +3894,17 @@ const App = () => {
       // If not admin and not approved, register them to the waitlist doc if missing
       if (!isUserAdmin && !isUserApproved) {
         const waitlistRef = doc(db, `/artifacts/${appId}/public/data/waitlist`, user.uid);
-        await setDoc(waitlistRef, {
-          uid: user.uid,
-          email: user.email || "User",
-          displayName: user.displayName || "Chef Candidate",
-          status: "pending",
-          requestedAt: serverTimestamp()
-        }, { merge: true });
+        const docSnap = await getDoc(waitlistRef);
+        
+        if (!docSnap.exists()) {
+          await setDoc(waitlistRef, {
+            uid: user.uid,
+            email: user.email || "User",
+            displayName: user.displayName || "Chef Candidate",
+            status: "pending",
+            requestedAt: serverTimestamp()
+          });
+        }
       }
     }
 
