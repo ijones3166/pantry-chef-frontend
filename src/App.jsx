@@ -6069,7 +6069,7 @@ const App = () => {
   
   if (activeRecipe)
     return (
-      <div className="relative w-full h-full">
+      <div className="fixed inset-0 z-50 flex flex-col bg-white h-[100dvh] w-full md:ml-64 overflow-hidden">
         <RecipeDetailView
           recipe={activeRecipe}
           onClose={() => setActiveRecipe(null)}
@@ -6077,7 +6077,6 @@ const App = () => {
           onUpdateRecipe={(updated) => setActiveRecipe(prev => ({ ...prev, ...updated }))}
           onDeleteRecipe={handleDeleteRecipe}
           onNukeRecipe={handleNukeRecipe}
-          onViewAuthor={handleViewAuthorProfile}
           onCook={handleCook}
           onAddToGrocery={addToGroceryList}
           onAddToPlan={handleAddToPlan}
@@ -6110,7 +6109,6 @@ const App = () => {
           activeFilters={activeFilters}
           onSelectRecipe={(r) => handleSetActiveRecipe(r)}
           />
-          {/* Render Universal Modal on top of Recipe View */}
           {addPantryModalJSX}
       </div>
     );
@@ -8636,6 +8634,15 @@ const App = () => {
             <span className="text-[9px] tracking-tight mt-0.5">TOOLS</span>
           </button>
 
+          {/* 👉 NEW: Mobile Feedback Button */}
+          <button
+            onClick={() => setShowFeedbackModal(true)}
+            className="flex flex-col items-center justify-center shrink-0 w-[60px] py-1 transition-all cursor-pointer text-gray-400 hover:text-indigo-600"
+          >
+            <AlertCircle className="w-5 h-5" />
+            <span className="text-[9px] tracking-tight mt-0.5">FEEDBACK</span>
+          </button>
+
           <button
             onClick={() => setActiveTab("profile")}
             className={`flex flex-col items-center justify-center shrink-0 w-[60px] py-1 transition-all cursor-pointer ${
@@ -8861,13 +8868,13 @@ const App = () => {
             .scrollbar-hide::-webkit-scrollbar { display: none; } 
             .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
             
-            /* 👉 SILKY TAB TRANSITION ANIMATION */
+            /* 👉 FIX: Using margin instead of transform prevents 'fixed' modals from getting trapped halfway down the page */
             @keyframes tabEnter {
-              from { opacity: 0; transform: translateY(8px); }
-              to { opacity: 1; transform: translateY(0); }
+              from { opacity: 0; margin-top: 12px; }
+              to { opacity: 1; margin-top: 0; }
             }
             .animate-tab-enter {
-              animation: tabEnter 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+              animation: tabEnter 0.25s ease-out forwards;
             }
           `,
         }}
