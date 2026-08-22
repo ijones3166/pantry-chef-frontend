@@ -3882,10 +3882,18 @@ const App = () => {
   const handleLogin = async () => {
     setShowLoginModal(false);
   
-
     if (auth?.currentUser && db) {
       const user = auth.currentUser;
       
+      // 👉 RECORD VISITOR LOG ON LOGIN
+      const visitorRef = doc(db, `/artifacts/${appId}/public/data/visitorLogs`, user.uid);
+      await setDoc(visitorRef, {
+        uid: user.uid,
+        email: user.email || "User",
+        displayName: user.displayName || "Chef Candidate",
+        lastLogin: serverTimestamp()
+      }, { merge: true });
+
       // Check custom claims for approval status
       const tokenResult = await user.getIdTokenResult(true);
       const isUserAdmin = tokenResult.claims.admin === true;
@@ -3909,8 +3917,6 @@ const App = () => {
     }
 
     setIsDemoAuthenticated(true);
-    setNotification("🎉 Successfully signed in!");
-    setTimeout(() => setNotification(null), 3000);
 
     if (!localStorage.getItem("pantry_chef_onboarded")) {
       setShowOnboarding(true);
