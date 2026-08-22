@@ -1,3 +1,7 @@
+import React, { useEffect, useState } from "react";
+import { Loader, Zap, CheckCircle, AlertCircle } from "lucide-react";
+import { doc, onSnapshot, addDoc, collection, serverTimestamp } from "firebase/firestore";
+
 const AdminRecipeIngestor = ({ db, appId, effectiveUserId, communityRecipes, setActiveTab }) => {
   const [urlList, setUrlList] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
@@ -219,3 +223,5 @@ const AdminRecipeIngestor = ({ db, appId, effectiveUserId, communityRecipes, set
     </div>
   );
 };
+
+export default AdminRecipeIngestor;

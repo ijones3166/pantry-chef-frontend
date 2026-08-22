@@ -1,3 +1,8 @@
+import React, { useEffect, useRef, useState } from "react";
+import { Mic, MicOff, Loader, Volume2 } from "lucide-react";
+
+
+
 // NEW: Voice Input Widget
 const VoiceInputWidget = ({ onVoiceSubmit, isProcessing, layout = "full" }) => {
   const [isListening, setIsListening] = useState(false);
@@ -54,7 +59,7 @@ const VoiceInputWidget = ({ onVoiceSubmit, isProcessing, layout = "full" }) => {
             : "bg-indigo-600 text-white hover:bg-indigo-700"
         }`}
       >
-        <Speaker className={layout === "full" ? "w-6 h-6" : "w-4 h-4"} />
+        <Volume2 className={layout === "full" ? "w-6 h-6" : "w-4 h-4"} />
       </button>
       {layout === "full" && (
         <div className="h-4 text-[10px] font-bold text-gray-500 text-center px-4">
@@ -64,3 +69,6 @@ const VoiceInputWidget = ({ onVoiceSubmit, isProcessing, layout = "full" }) => {
     </div>
   );
 };
+
+
+export default VoiceInputWidget;

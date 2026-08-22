@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
-import { X, Scan, Plus, Trash2, Send, CheckCircle, Loader, ArrowLeft, Eye, Clock, Users, Sparkles } from 'lucide-react';
+import React, { useState } from "react";
+import { Share2, X, Check, Globe } from "lucide-react";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+
+
 
 export default function ShareModal({ onClose, onSubmitRecipe, userProfile, pantryItems = [] }) {
   const [step, setStep] = useState('form'); // 'form' or 'preview'

@@ -1,7 +1,9 @@
 import React from "react";
-import { X, CheckCircle, ShoppingCart, Clock, Utensils, DollarSign, Sparkles, Scale } from "lucide-react";
+import { X, Check, Flame, DollarSign, Scale, Utensils, Sparkles, Clock, CheckCircle, ShoppingCart } from "lucide-react";
 
-export default function RecipeComparisonModal({
+
+
+function RecipeComparisonModal({
   selectedRecipes = [],
   inventory = [],
   onClose,
@@ -169,3 +171,6 @@ export default function RecipeComparisonModal({
     </div>
   );
 }
+
+
+export default RecipeComparisonModal;

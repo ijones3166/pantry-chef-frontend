@@ -1,7 +1,11 @@
-// Welcoming Onboarding Modal with Intro Hero (#36)
-// 👉 LANDMARK: Categorized & Normalized Onboarding Modal (#36)
-// 👉 LANDMARK: Fully Expanded & Visualized Onboarding Modal (#36)
-// 👉 LANDMARK: Redesigned 4-Step Onboarding Flow with Cuisine Scales & Recipe Teaser (#36)
+import React, { useState } from "react";
+import { ChefHat, MapPin, Check, ChevronRight, X } from "lucide-react";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { resizeImage } from "../utils/formatters";
+
+
+
+
 const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, onScanReceipt }) => {
   const [step, setStep] = useState(1);
   
@@ -551,3 +555,5 @@ const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, on
     </div>
   );
 };
+
+export default OnboardingModal;

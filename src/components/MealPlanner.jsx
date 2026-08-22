@@ -1,3 +1,12 @@
+import React, { useState } from "react";
+import { Calendar, Plus, Trash2, Clock, ChefHat, Zap, AlertCircle, Search } from "lucide-react";
+
+
+
+
+
+
+
 const MealPlanner = ({ plan, onAddMeal, onDeleteMeal, onGenerateDayPlan, onPlanExpiring, onBrowseRecipes }) => {
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
   const [selectedDay, setSelectedDay] = useState("Mon");
@@ -107,3 +116,6 @@ const MealPlanner = ({ plan, onAddMeal, onDeleteMeal, onGenerateDayPlan, onPlanE
     </div>
   );
 };
+
+
+export default MealPlanner;

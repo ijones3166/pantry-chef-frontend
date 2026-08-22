@@ -1,10 +1,12 @@
-import ReverseSchedulerModal from './ReverseSchedulerModal';
 import React, { useState, useEffect, useRef } from "react";
-import { X, List, BookOpen, AlarmClock, TimerIcon, ChevronRight, ChefHat, Pin, Mic, MicOff, Volume2 } from "lucide-react";
+import { X, Play, Pause, RotateCcw, CheckCircle, ChevronLeft, ChevronRight, Timer as TimerIcon, List, BookOpen, MicOff, Pin, ChefHat, Volume2, Mic, AlarmClock } from "lucide-react";
+import ReverseSchedulerModal from './ReverseSchedulerModal';
 import ConverterWidget from './ConverterWidget';
-import KitchenGuide from './KitchenGuide';
+import KitchenGuide from './SettingsProfile';
 
-export default function CookingMode({ 
+
+
+function CookingMode({ 
   recipe, 
   initialServings, 
   onClose, 
@@ -13,7 +15,7 @@ export default function CookingMode({
   pinnedRecipes = [], 
   setPinnedRecipes = () => {},
   askAIChef,
-  onOpenReverseScheduler
+  onOpenReverseScheduler,
 }) {
   const [activeRecipe, setActiveRecipe] = useState(recipe);
   const [step, setStep] = useState(0);
@@ -29,14 +31,14 @@ export default function CookingMode({
   const [chatLog, setChatLog] = useState([]);
   const [aiThinking, setAiThinking] = useState(false);
 
-  // 👉 Hands-Free Voice Control & TTS States
+  // Hands-Free Voice Control & TTS States
   const [isVoiceActive, setIsVoiceActive] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const recognitionRef = useRef(null);
 
   
 
-  // 👉 Screen Wake Lock API Implementation
+  // Screen Wake Lock API Implementation
   useEffect(() => {
     let wakeLock = null;
     const requestWakeLock = async () => {
@@ -64,7 +66,7 @@ export default function CookingMode({
 
   const currentStepText = steps[step] || steps[0] || "Prepare ingredients as directed.";
 
-  // 👉 TTS Step Reader with Audio Ducking (cancels prior audio utterance)
+  // TTS Step Reader with Audio Ducking (cancels prior audio utterance)
   const speakCurrentStep = (textToSpeak) => {
     if (!('speechSynthesis' in window)) return;
     
@@ -73,7 +75,6 @@ export default function CookingMode({
     const cleanText = textToSpeak.replace(/^\d+\.\s*/, ''); 
     const utterance = new SpeechSynthesisUtterance(`Step ${step + 1}: ${cleanText}`);
     
-    // 👉 Attach selected voice persona
     if (selectedVoiceUri && availableVoices.length > 0) {
       const chosenVoice = availableVoices.find(v => v.voiceURI === selectedVoiceUri);
       if (chosenVoice) utterance.voice = chosenVoice;
@@ -90,7 +91,7 @@ export default function CookingMode({
     window.speechSynthesis.speak(utterance);
   };
 
-  // 👉 Voice Persona States
+  // Voice Persona States
   const [availableVoices, setAvailableVoices] = useState([]);
   const [selectedVoiceUri, setSelectedVoiceUri] = useState("");
 
@@ -123,7 +124,7 @@ export default function CookingMode({
     };
   }, [step, activeRecipe]);
 
-  // 👉 Hands-Free Speech Recognition Setup
+  // Hands-Free Speech Recognition Setup
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) return;
@@ -289,7 +290,7 @@ export default function CookingMode({
   return (
     <div className="fixed inset-0 bg-gray-900 z-50 flex flex-col text-white animate-in slide-in-from-bottom duration-300">
       
-      {/* ⏱️ Persistent Global Timers Banner */}
+      {/* Persistent Global Timers Banner */}
       {globalTimers.length > 0 && (
         <div className="bg-indigo-600 p-3 px-4 flex items-center justify-between shadow-lg border-b border-indigo-500 z-50 overflow-x-auto">
           <div className="flex items-center gap-4">
@@ -336,7 +337,7 @@ export default function CookingMode({
               <BookOpen className="w-3.5 h-3.5" /> Cheat Sheets
             </button>
             
-            {/* 👉 Voice Control / Hands-Free Toggle */}
+            {/* Voice Control / Hands-Free Toggle */}
             <button
               onClick={toggleVoiceMode}
               className={`p-1.5 md:p-2 rounded-lg text-[10px] md:text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors ${
@@ -347,7 +348,7 @@ export default function CookingMode({
               {isVoiceActive ? <Mic className="w-3.5 h-3.5" /> : <MicOff className="w-3.5 h-3.5" />}
               {isVoiceActive ? "Voice Active" : "Voice Control"}
             </button>
-            {/* 👉 Sous Chef Voice Persona Selector */}
+            {/* Sous Chef Voice Persona Selector */}
             {availableVoices.length > 0 && (
               <select
                 value={selectedVoiceUri}
@@ -548,44 +549,85 @@ export default function CookingMode({
 
       {/* Chef Assistant Chat Drawer */}
       {chatOpen && (
-        <div className="absolute inset-x-0 bottom-0 h-3/4 bg-white text-gray-900 rounded-t-3xl shadow-2xl flex flex-col animate-in slide-in-from-bottom z-50">
-          <div className="p-4 border-b flex justify-between items-center bg-gray-50 rounded-t-3xl">
-            <h3 className="font-bold">Chef Assistant</h3>
-            <button onClick={() => setChatOpen(false)} className="cursor-pointer">
-              <X className="w-5 h-5 text-gray-400" />
+        <div className="absolute bottom-20 right-4 md:right-6 w-96 max-w-[calc(100vw-2rem)] h-[440px] bg-white text-gray-900 rounded-3xl shadow-2xl border border-gray-200 z-50 overflow-hidden flex flex-col animate-in slide-in-from-bottom duration-200">
+          
+          {/* Dark Header */}
+          <div className="bg-gray-900 text-white p-4 flex items-center justify-between shrink-0">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 bg-indigo-600 rounded-lg flex items-center justify-center">
+                <ChefHat className="w-4 h-4 text-white" />
+              </div>
+              <div>
+                <h4 className="font-bold text-xs">Chef Assistant</h4>
+                <p className="text-[9px] text-indigo-300 uppercase tracking-wider">Context: Cooking Mode</p>
+              </div>
+            </div>
+            <button 
+              onClick={() => setChatOpen(false)}
+              className="p-1 hover:bg-white/10 rounded-full text-gray-400 hover:text-white cursor-pointer transition-colors"
+            >
+              <X className="w-4 h-4" />
             </button>
           </div>
-          <div className="flex-grow overflow-y-auto p-4 space-y-3 bg-gray-50">
+
+          {/* Quick-Prompt Suggestions Bar */}
+          <div className="bg-indigo-50/60 p-2.5 border-b border-indigo-100 flex gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+            {[
+              "How do I prep this?",
+              "What's a good substitute?",
+              "Timer check?"
+            ].map((prompt, idx) => (
+              <button
+                key={idx}
+                onClick={() => {
+                  setChatQuery(prompt);
+                }}
+                className="bg-white hover:bg-indigo-600 hover:text-white text-indigo-700 border border-indigo-200/80 px-3 py-1 rounded-full text-[10px] font-bold shrink-0 transition-colors shadow-2xs cursor-pointer"
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+
+          {/* Chat Message Stream */}
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 text-xs bg-gray-50/50">
+            <div className="bg-white p-3 rounded-2xl border border-gray-100 shadow-2xs max-w-[85%]">
+              <p className="text-gray-800 leading-relaxed">
+                Hi Chef! I'm tracking your cooking steps. Need help with substitutions, timing, or scaling?
+              </p>
+            </div>
             {chatLog.map((msg, i) => (
               <div
                 key={i}
-                className={`p-3 rounded-xl max-w-[85%] text-sm ${
+                className={`p-3 rounded-2xl max-w-[85%] text-xs leading-relaxed ${
                   msg.role === "user"
-                    ? "bg-indigo-600 text-white ml-auto"
-                    : "bg-white border border-gray-200 mr-auto"
+                    ? "bg-indigo-600 text-white ml-auto shadow-sm"
+                    : "bg-white border border-gray-100 mr-auto shadow-2xs text-gray-800"
                 }`}
               >
                 {msg.text}
               </div>
             ))}
             {aiThinking && (
-              <div className="p-3 bg-white border border-gray-200 rounded-xl max-w-[85%] text-sm mr-auto text-gray-400 animate-pulse">
+              <div className="p-3 bg-white border border-gray-100 rounded-2xl max-w-[85%] text-xs mr-auto text-gray-400 animate-pulse shadow-2xs">
                 Chef is thinking...
               </div>
             )}
           </div>
-          <form onSubmit={handleAskChef} className="p-4 border-t bg-white flex gap-2">
+
+          {/* Input Footer */}
+          <form onSubmit={handleAskChef} className="p-3 bg-white border-t border-gray-100 flex items-center gap-2 shrink-0">
             <input
               value={chatQuery}
               onChange={(e) => setChatQuery(e.target.value)}
-              placeholder="Ask question..."
-              className="flex-grow p-3 bg-gray-100 rounded-xl text-sm outline-none"
+              placeholder="Ask question about this recipe..."
+              className="flex-1 p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500 text-gray-900"
             />
             <button
               type="submit"
-              className="p-3 bg-indigo-600 text-white rounded-xl cursor-pointer"
+              className="p-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs transition-colors cursor-pointer"
             >
-              <ChevronRight className="w-5 h-5" />
+              <ChevronRight className="w-4 h-4" />
             </button>
           </form>
         </div>
@@ -616,3 +658,6 @@ export default function CookingMode({
     </div>
   );
 }
+
+
+export default CookingMode;

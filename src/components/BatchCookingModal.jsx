@@ -1,7 +1,9 @@
 import React, { useState } from "react";
-import { X, Calendar, Package, ArrowRight, Zap, CheckCircle } from "lucide-react";
+import { X, ChefHat, Clock, Flame, Check } from "lucide-react";
 
-export default function BatchCookingModal({ recipe, inventory, onClose, onSaveBatch }) {
+
+
+function BatchCookingModal({ recipe, inventory, onClose, onSaveBatch }) {
   const baseServings = recipe?.servings || 4;
   const [multiplier, setMultiplier] = useState(3); // Default to 3x batch ("Eat Thrice+")
   const [targetDays, setTargetDays] = useState(["Tue", "Wed", "Thu"]); // Days to map leftovers
@@ -143,3 +145,6 @@ export default function BatchCookingModal({ recipe, inventory, onClose, onSaveBa
     </div>
   );
 }
+
+
+export default BatchCookingModal;

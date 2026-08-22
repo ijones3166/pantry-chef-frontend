@@ -1,7 +1,7 @@
 import React, { useState } from "react";
-import { BookOpen, X } from "lucide-react";
+import { X, Shield, BookOpen } from "lucide-react";
 
-export default function LegalModal({ onClose }) {
+function LegalModal({ onClose }) {
   const [legalTab, setLegalTab] = useState("tos");
 
   return (
@@ -97,3 +97,6 @@ export default function LegalModal({ onClose }) {
     </div>
   );
 }
+
+
+export default LegalModal;

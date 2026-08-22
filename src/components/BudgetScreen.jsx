@@ -1,3 +1,6 @@
+import React, { useMemo, useState } from "react";
+import { DollarSign, TrendingUp, ShoppingBag, Plus, Trash2, Package, BarChart3 } from "lucide-react";
+
 const BudgetScreen = ({ history, wasteHistory, inventory = [] }) => {
   const now = new Date();
   const currentMonth = now.getMonth();
@@ -180,3 +183,7 @@ const BudgetScreen = ({ history, wasteHistory, inventory = [] }) => {
     </div>
   );
 };
+
+
+
+export default BudgetScreen;

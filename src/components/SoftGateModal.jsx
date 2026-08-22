@@ -1,3 +1,7 @@
+import React from "react";
+import { X, Lock, Sparkles } from "lucide-react";
+
+
 // 👉 LANDMARK: Soft-Gated Upsell Modal Component (#28.7)
 const SoftGateModal = ({ isOpen, onClose, featureContext = "save recipes & sync your pantry" }) => {
   if (!isOpen) return null;
@@ -48,3 +52,5 @@ const SoftGateModal = ({ isOpen, onClose, featureContext = "save recipes & sync 
     </div>
   );
 };
+
+export default SoftGateModal;

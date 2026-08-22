@@ -1,7 +1,7 @@
 import React from "react";
-import { Users, X } from "lucide-react";
+import { X, ShieldCheck, User, Users } from "lucide-react";
 
-export default function CommunityGuidelinesModal({ onClose }) {
+function CommunityGuidelinesModal({ onClose }) {
   return (
     <div className="fixed inset-0 bg-black/60 z-[85] flex items-center justify-center p-4 animate-in fade-in">
       <div className="bg-white w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh] animate-in slide-in-from-bottom">
@@ -67,3 +67,6 @@ export default function CommunityGuidelinesModal({ onClose }) {
     </div>
   );
 }
+
+
+export default CommunityGuidelinesModal;

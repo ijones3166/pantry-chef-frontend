@@ -1,3 +1,7 @@
+import React, { useState } from "react";
+import { X, CheckCircle, Send, AlertCircle, Loader } from "lucide-react";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+
 // --- FEEDBACK MODAL COMPONENT ---
 const FeedbackModal = ({ onClose, effectiveUserId, db, appId }) => {
   const [feedbackType, setFeedbackType] = useState("bug");
@@ -99,3 +103,6 @@ const FeedbackModal = ({ onClose, effectiveUserId, db, appId }) => {
     </div>
   );
 };
+
+
+export default FeedbackModal;

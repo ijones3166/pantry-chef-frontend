@@ -1,3 +1,7 @@
+import React, { useState } from "react";
+import { AlertOctagon, X, CheckCircle, Loader } from "lucide-react";
+import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+
 const ReportRecipeModal = ({ recipe, onClose, effectiveUserId, db, appId }) => {
   const [reason, setReason] = useState("Inappropriate Content");
   const [details, setDetails] = useState("");
@@ -86,3 +90,6 @@ const ReportRecipeModal = ({ recipe, onClose, effectiveUserId, db, appId }) => {
     </div>
   );
 };
+
+
+export default ReportRecipeModal;

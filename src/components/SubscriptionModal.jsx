@@ -1,3 +1,7 @@
+import React from "react";
+import { X, Crown, Check, Zap, CheckCircle } from "lucide-react";
+
+
 const SubscriptionModal = ({ onClose }) => (
   <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-in fade-in">
     <div className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl animate-in slide-in-from-bottom">
@@ -42,3 +46,6 @@ const SubscriptionModal = ({ onClose }) => (
     </div>
   </div>
 );
+
+
+export default SubscriptionModal;

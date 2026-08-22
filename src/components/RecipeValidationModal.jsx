@@ -1,7 +1,10 @@
 import React, { useState } from "react";
-import { CheckCircle2, AlertTriangle, ShieldCheck, X, ArrowRight } from "lucide-react";
+import { X, CheckCircle, AlertTriangle, ShieldCheck } from "lucide-react";
 
-export default function RecipeValidationModal({ recipeData, onClose, onConfirmPublish }) {
+
+
+
+function RecipeValidationModal({ recipeData, onClose, onConfirmPublish }) {
   const [agreedToGuidelines, setagreedToGuidelines] = useState(false);
 
   // Run automated validation checks on the recipe draft
@@ -98,3 +101,5 @@ export default function RecipeValidationModal({ recipeData, onClose, onConfirmPu
     </div>
   );
 }
+
+export default RecipeValidationModal;

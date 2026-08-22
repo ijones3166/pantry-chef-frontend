@@ -1,508 +1,285 @@
-// Re-implementing ToolsScreen
-const ToolsView = () => {
-  return (
-    <div className="space-y-6 max-w-4xl mx-auto p-2 md:p-6 animate-in fade-in">
-      <div className="flex items-center gap-2 mb-2">
-        <BookOpen className="w-6 h-6 text-indigo-600" />
-        <h2 className="text-xl font-black text-gray-900">Culinary Tools & Cheat Sheets</h2>
-      </div>
-      <ConverterWidget />
-      <KitchenGuide />
-    </div>
-  );
-};
-const ToolsScreen = ({
-  profile,
-  onSaveProfile,
-  isAdmin,
-  onToggleAdmin,
-  isDemoAuthenticated,
-  onShowLogin,
-  onRestartTour,
-  defaultTab = "tools",
-  onOpenGuidelines,
-  onOpenLegal,
-}) => {
-  const [subTab, setSubTab] = useState(defaultTab);
-  const [profileImage, setProfileImage] = useState(profile.image || null);
-  const [dataSyncId, setDataSyncId] = useState(
-    localStorage.getItem("pantry_chef_custom_id") || ""
-  );
-  const [localProfile, setLocalProfile] = useState(
-    profile || { diets: [], equipment: [], zipCode: "" }
-  );
-  const [customEquip, setCustomEquip] = useState("");
+import React, { useState } from "react";
+import { 
+  ChefHat, 
+  Droplet, 
+  ShieldAlert, 
+  Clock, 
+  Flame, 
+  Sparkles, 
+  Calendar, 
+  Box 
+} from "lucide-react";
 
-  const [apiUsage, setApiUsage] = useState(getApiUsage());
-  useEffect(() => {
-    const handleUpdate = () => setApiUsage(getApiUsage());
-    window.addEventListener("apiUsageUpdated", handleUpdate);
-    return () => window.removeEventListener("apiUsageUpdated", handleUpdate);
-  }, []);
+export default function ToolsScreen({ onNavigateToPlanner }) {
+  const [activeTab, setActiveTab] = useState("knife");
 
-  const triggerSystemNotification = (title, body) => {
-    window.dispatchEvent(
-      new CustomEvent("triggerSystemNotification", { detail: { title, body } })
-    );
-  };
-
-  const diets = [
-    "Vegetarian", "Vegan", "Gluten-Free", "Keto", "Paleo",
-    "Nut-Free", "Dairy-Free", "Shellfish-Free", "Egg-Free", "Kosher", "Halal",
-  ];
-  const defaultEquipment = [
-    "Air Fryer", "Blender", "Slow Cooker", "Instant Pot", "Food Processor",
-    "Wok", "Stand Mixer", "Dutch Oven", "Cast Iron Skillet", "Rice Cooker",
-    "Sous Vide", "Grill", "Smoker", "Microwave", "Toaster", "Immersion Blender", "Mandoline", "Pizza Stone",
-  ];
-  const displayEquipment = Array.from(
-    new Set([...defaultEquipment, ...(localProfile.equipment || [])])
-  );
-
-  const toggleItem = (cat, item) => {
-    const cur = localProfile[cat] || [];
-    setLocalProfile({
-      ...localProfile,
-      [cat]: cur.includes(item)
-        ? cur.filter((i) => i !== item)
-        : [...cur, item],
-    });
-  };
-
-  const handleProfileImageSelect = async (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const resized = await resizeImage(file, 200);
-      setProfileImage(resized);
-      setLocalProfile({ ...localProfile, image: resized });
+  const knifeSkills = [
+    {
+      name: "Slice",
+      desc: "Thin, broad cuts across the grain.",
+      iconSvg: (
+        <svg className="w-6 h-6 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <line x1="3" y1="8" x2="21" y2="8" />
+          <line x1="3" y1="16" x2="21" y2="16" />
+        </svg>
+      )
+    },
+    {
+      name: "Chop",
+      desc: "Irregular, bite-sized pieces for stocks and stews.",
+      iconSvg: (
+        <svg className="w-6 h-6 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="3" y="3" width="7" height="7" rx="1" />
+          <rect x="14" y="4" width="6" height="5" rx="1" />
+          <rect x="4" y="14" width="8" height="6" rx="1" />
+          <rect x="15" y="13" width="6" height="8" rx="1" />
+        </svg>
+      )
+    },
+    {
+      name: "Dice",
+      desc: "Uniform, square cubes (Large 3/4\", Med 1/2\", Small 1/4\").",
+      iconSvg: (
+        <svg className="w-6 h-6 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="3" y="3" width="5" height="5" />
+          <rect x="11" y="3" width="5" height="5" />
+          <rect x="11" y="11" width="5" height="5" />
+          <rect x="3" y="11" width="5" height="5" />
+        </svg>
+      )
+    },
+    {
+      name: "Julienne",
+      desc: "Long, ultra-thin matchsticks (1/8\" × 1/8\" × 2\").",
+      iconSvg: (
+        <svg className="w-6 h-6 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <line x1="6" y1="3" x2="6" y2="21" />
+          <line x1="11" y1="3" x2="11" y2="21" />
+          <line x1="16" y1="3" x2="16" y2="21" />
+        </svg>
+      )
+    },
+    {
+      name: "Chiffonade",
+      desc: "Tightly rolled leafy greens cut into delicate ribbons.",
+      iconSvg: (
+        <svg className="w-6 h-6 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M3 6 C 8 12, 16 0, 21 6" />
+          <path d="M3 12 C 8 18, 16 6, 21 12" />
+          <path d="M3 18 C 8 24, 16 12, 21 18" />
+        </svg>
+      )
     }
-  };
+  ];
 
+  const steakTemps = [
+    { name: "Rare", temp: "120°F - 130°F", desc: "Cool red center, soft texture", badgeBg: "bg-red-600 text-white", centerColor: "#DC2626" },
+    { name: "Medium Rare", temp: "130°F - 135°F", desc: "Warm red center, chef recommended", badgeBg: "bg-rose-500 text-white", centerColor: "#E11D48" },
+    { name: "Medium", temp: "135°F - 145°F", desc: "Warm pink center, juicy firm bite", badgeBg: "bg-pink-600 text-white", centerColor: "#EC4899" },
+    { name: "Medium Well", temp: "145°F - 155°F", desc: "Slight pink streak in center", badgeBg: "bg-amber-700 text-white", centerColor: "#B45309" },
+    { name: "Well Done", temp: "160°F+", desc: "Little to no pink, fully cooked", badgeBg: "bg-stone-800 text-white", centerColor: "#44403C" },
+  ];
 
-const handleProtectedPreferenceChange = (contextLabel, callback) => {
-    if (!isDemoAuthenticated) {
-      setSoftGateContext(contextLabel);
-      setShowSoftGate(true);
-      return;
-    }
-    callback();
-  };
-  const handleSyncIdChange = (e) => {
-    const newVal = e.target.value;
-    setDataSyncId(newVal);
-    localStorage.setItem("pantry_chef_custom_id", newVal);
-  };
+  const cookingOils = [
+    { name: "Avocado Oil", smoke: "520°F", heatLevel: 95, usage: "High-Heat Searing, Deep Frying, Roasting" },
+    { name: "Peanut Oil", smoke: "450°F", heatLevel: 82, usage: "Frying, Asian Wok Cooking, Stir Fry" },
+    { name: "Canola Oil", smoke: "400°F", heatLevel: 70, usage: "Baking, General Frying, Neutral Cooking" },
+    { name: "Extra Virgin Olive Oil", smoke: "375°F", heatLevel: 55, usage: "Salad Dressings, Finishing, Low-Med Sauté" },
+    { name: "Coconut Oil", smoke: "350°F", heatLevel: 48, usage: "Baking, Sautéing, Mild Curry Dishes" },
+    { name: "Sesame Oil (Toasted)", smoke: "350°F", heatLevel: 45, usage: "Finishing Oil, Marinades, Sauces (Do not fry)" }
+  ];
 
-  const badgeCount = Object.keys(profile?.challenges || {}).filter(
-    (k) => profile?.challenges?.[k] >= CHALLENGES.find((c) => c.id === k)?.target
-  ).length;
+  const foodStorage = [
+    { item: "Leafy Greens", tip: "Store with a dry paper towel in a sealed container to absorb excess moisture." },
+    { item: "Fresh Soft Herbs (Cilantro/Parsley)", tip: "Treat like flowers! Trim stems and place upright in a glass of water, loosely covered." },
+    { item: "Berries", tip: "Don't wash until ready to eat! Store in a paper-towel-lined vented container." },
+    { item: "Avocados", tip: "Ripen on the counter. Once soft, transfer to the fridge to lock in ripeness for up to 5 days." },
+    { item: "Bread", tip: "Never refrigerate (it stales faster!). Keep room temp or slice and freeze." },
+    { item: "Ethylene Producers (Apples/Bananas)", tip: "Keep away from greens and tomatoes—they release gas that causes nearby produce to rot." }
+  ];
 
   return (
-    <div className="space-y-6 animate-in fade-in">
-      <div className="space-y-6 animate-in fade-in">
-          {/* 1. Login Banner */}
-          {!isDemoAuthenticated && (
-            <div className="bg-indigo-600 p-6 rounded-3xl shadow-lg text-center text-white">
-              <ChefHat className="w-12 h-12 mx-auto mb-3 text-white/90" />
-              <h3 className="font-black text-xl mb-1">Create Account</h3>
-              <p className="text-sm text-indigo-100 mb-4">
-                Sync your pantry, save recipes, and earn badges.
-              </p>
-              <button
-                onClick={onShowLogin}
-                className="w-full py-3 bg-white text-indigo-600 font-bold rounded-xl hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2 cursor-pointer"
-              >
-                <LogIn className="w-4 h-4" /> Sign In / Sign Up
-              </button>
+    <div className="space-y-6 max-w-4xl mx-auto">
+      {/* 2. KITCHEN CHEAT SHEETS */}
+      <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
+        <h2 className="text-base font-bold text-gray-900 mb-4 flex items-center gap-2">
+          <ChefHat className="w-5 h-5 text-indigo-600" /> Kitchen Cheat Sheets
+        </h2>
+
+        {/* NAVIGATION TABS */}
+        <div className="flex bg-gray-900 text-white p-1 rounded-2xl mb-6 overflow-x-auto scrollbar-hide">
+          {[
+            { id: "knife", label: "Knife Skills" },
+            { id: "steak", label: "Steak Temps" },
+            { id: "oils", label: "Cooking Oils" },
+            { id: "storage", label: "Food Storage" },
+            { id: "defrost", label: "Defrosting" }
+          ].map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex-1 min-w-[100px] py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer text-center ${
+                activeTab === tab.id ? "bg-indigo-600 text-white shadow-sm" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* TAB CONTENT */}
+        <div>
+          {/* KNIFE SKILLS */}
+          {activeTab === "knife" && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {knifeSkills.map((k) => (
+                <div key={k.name} className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex items-start gap-4">
+                  <div className="p-3 bg-white rounded-xl shadow-sm border border-gray-200/80 shrink-0">
+                    {k.iconSvg}
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-gray-900 text-sm">{k.name}</h3>
+                    <p className="text-xs text-gray-500 mt-0.5 leading-relaxed">{k.desc}</p>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
 
-          {/* 2. My Profile & Account Details Card */}
-          <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-6 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none filter blur-sm select-none" : ""}`}>
-            
-            {/* Header */}
-            <div className="flex items-center gap-2 border-b border-gray-100 pb-4">
-              <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
-                <UserCircle className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-black text-gray-900 text-sm">My Profile & Preferences</h3>
-                <p className="text-[10px] text-gray-400">Manage your public chef identity and account credentials</p>
-              </div>
-            </div>
-
-            {/* Avatar Upload Area */}
-            <div className="flex flex-col items-center justify-center text-center">
-              <label className="cursor-pointer inline-block relative group">
-                <div className="w-24 h-24 rounded-full bg-gray-50 flex items-center justify-center overflow-hidden border-2 border-dashed border-gray-300 group-hover:border-indigo-500 transition-colors mx-auto shadow-inner">
-                  {profileImage ? (
-                    <img src={profileImage} alt="Me" className="w-full h-full object-cover" />
-                  ) : (
-                    <Scan className="w-8 h-8 text-gray-400 group-hover:text-indigo-500 transition-colors" />
-                  )}
-                </div>
-                <div className="absolute bottom-0 right-0 bg-indigo-600 p-2 rounded-full text-white shadow-md">
-                  <Plus className="w-3 h-3" />
-                </div>
-                <input type="file" accept="image/*" onChange={handleProfileImageSelect} className="hidden" disabled={!isDemoAuthenticated} />
-              </label>
-              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mt-2">Tap to change avatar</span>
-            </div>
-
-            {/* Account Details Inputs */}
-            <div className="space-y-4 pt-2 border-t border-gray-100">
-              <div className="space-y-1">
-                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Display Name</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Chef Ishon"
-                  className="w-full p-3 bg-gray-50 rounded-2xl text-xs outline-none border border-gray-200 focus:border-indigo-600 focus:bg-white transition-all font-medium text-gray-800"
-                  value={localProfile.name || ""}
-                  onChange={(e) => setLocalProfile({ ...localProfile, name: e.target.value })}
-                  disabled={!isDemoAuthenticated}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Email Address</label>
-                <input
-                  type="email"
-                  placeholder="you@example.com"
-                  className="w-full p-3 bg-gray-50 rounded-2xl text-xs outline-none border border-gray-200 focus:border-indigo-600 focus:bg-white transition-all font-medium text-gray-800"
-                  value={localProfile.email || ""}
-                  onChange={(e) => setLocalProfile({ ...localProfile, email: e.target.value })}
-                  disabled={!isDemoAuthenticated}
-                />
-              </div>
-
-              <div className="space-y-1">
-                <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider flex items-center gap-1">
-                  <MapPin className="w-3 h-3 text-indigo-500" /> Zip Code (For Local Grocery Deals)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 90210"
-                  className="w-full p-3 bg-gray-50 rounded-2xl text-xs outline-none border border-gray-200 focus:border-indigo-600 focus:bg-white transition-all font-medium text-gray-800"
-                  value={localProfile.zipCode || ""}
-                  onChange={(e) => setLocalProfile({ ...localProfile, zipCode: e.target.value })}
-                  maxLength={5}
-                  disabled={!isDemoAuthenticated}
-                />
-              </div>
-            </div>
-
-          </div>
-          
-          {/* 3. AI Usage */}
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-            <h3 className="font-bold text-gray-900 mb-2 flex items-center gap-2">
-              <Battery className="w-5 h-5 text-green-500" /> AI Usage Today
-            </h3>
-            <div className="flex justify-between text-xs font-bold text-gray-500 mb-1">
-              <span>Used: {apiUsage}</span>
-              <span>Limit: {DAILY_API_LIMIT}</span>
-            </div>
-            <div className="w-full bg-gray-100 rounded-full h-3">
-              <div
-                className="h-3 rounded-full bg-green-500 transition-all duration-500"
-                style={{ width: `${Math.min((apiUsage / DAILY_API_LIMIT) * 100, 100)}%` }}
-              ></div>
-            </div>
-          </div>
-
-          {/* 4. Creator Progress */}
-          {profile.creatorProgress > 0 && (
-            <div className="bg-yellow-50 p-6 rounded-3xl border border-yellow-200 shadow-sm relative overflow-hidden">
-              <div className="absolute -right-4 -top-4 text-yellow-100">
-                <Medal className="w-24 h-24" />
-              </div>
-              <div className="relative z-10">
-                <h3 className="font-bold text-yellow-800 mb-2 flex items-center gap-2">
-                  <Medal className="w-5 h-5" /> Creator Status
-                </h3>
-                {profile.creatorProgress >= 100 ? (
-                  <div>
-                    <p className="text-xs font-bold text-yellow-700 mb-2">You are a Verified Pro Chef!</p>
-                    <button className="w-full py-2 bg-white text-yellow-700 text-xs font-bold rounded-lg border border-yellow-200 shadow-sm cursor-pointer">
-                      Manage Affiliate Links
-                    </button>
-                  </div>
-                ) : (
-                  <div>
-                    <div className="flex justify-between text-[10px] font-bold text-yellow-600 mb-1">
-                      <span>Progress to Badge</span>
-                      <span>{profile.creatorProgress}%</span>
-                    </div>
-                    <div className="w-full bg-yellow-200 rounded-full h-2 mb-2">
-                      <div className="bg-yellow-500 h-2 rounded-full" style={{ width: `${profile.creatorProgress}%` }}></div>
+          {/* STEAK TEMPS */}
+          {activeTab === "steak" && (
+            <div className="space-y-3">
+              {steakTemps.map((st) => (
+                <div key={st.name} className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div 
+                      className="w-4 h-12 rounded-full shrink-0 shadow-inner" 
+                      style={{ backgroundColor: st.centerColor }}
+                      title="Inner Meat Visual"
+                    />
+                    <div>
+                      <h3 className="font-bold text-gray-900 text-sm">{st.name}</h3>
+                      <p className="text-xs text-gray-500">{st.desc}</p>
                     </div>
                   </div>
+                  <span className={`px-3 py-1 rounded-full text-xs font-mono font-bold ${st.badgeBg}`}>
+                    {st.temp}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* COOKING OILS */}
+          {activeTab === "oils" && (
+            <div className="space-y-3">
+              {cookingOils.map((oil) => (
+                <div key={oil.name} className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-2">
+                  <div className="flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                      <Droplet className="w-4 h-4 text-amber-500 fill-amber-500" />
+                      <h3 className="font-bold text-gray-900 text-sm">{oil.name}</h3>
+                    </div>
+                    <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100 font-mono">
+                      Smoke Point: {oil.smoke}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 font-medium">Best for: <span className="text-gray-900">{oil.usage}</span></p>
+                  <div className="w-full bg-gray-200 rounded-full h-1.5 overflow-hidden">
+                    <div 
+                      className="bg-gradient-to-r from-amber-400 via-orange-500 to-red-600 h-1.5 rounded-full"
+                      style={{ width: `${oil.heatLevel}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* FOOD STORAGE */}
+          {activeTab === "storage" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {foodStorage.map((s) => (
+                  <div key={s.item} className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Box className="w-4 h-4 text-indigo-600" />
+                      <h3 className="font-bold text-gray-900 text-sm">{s.item}</h3>
+                    </div>
+                    <p className="text-xs text-gray-500 leading-relaxed">{s.tip}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Shelf Life Engine Feature Callout */}
+              <div className="bg-indigo-50/70 p-4 rounded-2xl border border-indigo-100 flex items-start gap-3">
+                <Sparkles className="w-5 h-5 text-indigo-600 shrink-0 mt-0.5" />
+                <div className="text-xs text-indigo-950 leading-relaxed">
+                  <span className="font-bold text-indigo-900">Did you know?</span> Items added to your <strong>Pantry</strong> auto-calculate recommended shelf life and alert you before they spoil!
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* DEFROSTING & PLANNER FEATURE PLUG */}
+          {activeTab === "defrost" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-2">
+                  <div className="flex items-center gap-2 text-green-700">
+                    <ShieldAlert className="w-4 h-4" />
+                    <h3 className="font-bold text-xs uppercase tracking-wide">1. Fridge Thaw (Gold Standard)</h3>
+                  </div>
+                  <p className="text-xs text-gray-600 leading-relaxed">
+                    Move items to the lowest fridge shelf 24–48 hours ahead. Keeps meat safe below 40°F during thawing.
+                  </p>
+                </div>
+
+                <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-2">
+                  <div className="flex items-center gap-2 text-amber-600">
+                    <Clock className="w-4 h-4" />
+                    <h3 className="font-bold text-xs uppercase tracking-wide">2. Cold Water Bath</h3>
+                  </div>
+                  <p className="text-xs text-gray-600 leading-relaxed">
+                    Submerge sealed vacuum bag in cold tap water. Change water every 30 mins. Thaws in 1–3 hours.
+                  </p>
+                </div>
+
+                <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-2">
+                  <div className="flex items-center gap-2 text-red-600">
+                    <Flame className="w-4 h-4" />
+                    <h3 className="font-bold text-xs uppercase tracking-wide">3. Microwave Defrost</h3>
+                  </div>
+                  <p className="text-xs text-gray-600 leading-relaxed">
+                    Use 30% power settings. Must cook immediately after defrosting as edges begin to warm into danger zone.
+                  </p>
+                </div>
+              </div>
+
+              {/* Defrost Lead Time Feature Plug */}
+              <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white p-5 rounded-2xl shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="flex items-start gap-3">
+                  <Calendar className="w-6 h-6 text-yellow-300 shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-bold text-sm">Never Forget to Defrost Meat Again</h4>
+                    <p className="text-xs text-indigo-100 mt-0.5">
+                      When you schedule meals in your <strong>Meal Planner</strong>, Pantry Chef automatically calculates frozen lead-time and alerts you when to move items to the fridge.
+                    </p>
+                  </div>
+                </div>
+                {onNavigateToPlanner && (
+                  <button
+                    onClick={onNavigateToPlanner}
+                    className="px-4 py-2 bg-white text-indigo-600 text-xs font-bold rounded-xl shadow-sm hover:bg-indigo-50 transition-colors shrink-0 cursor-pointer"
+                  >
+                    Open Meal Planner
+                  </button>
                 )}
               </div>
             </div>
           )}
-
-          {/* 👉 ONLY SHOWN TO APPROVED ADMIN / OWNER */}
-          {isAdmin && (
-            <div className="bg-gray-900 p-4 rounded-3xl shadow-sm border border-gray-800 text-white space-y-4">
-              <h3 className="font-bold text-sm flex items-center gap-2">
-                <Briefcase className="w-4 h-4 text-indigo-400" /> Admin & Tester Controls (Approved Only)
-              </h3>
-              
-              {/* 5. Simulate Notifications */}
-          <div className="bg-gray-900 p-4 rounded-3xl shadow-sm border border-gray-800">
-            <h3 className="font-bold text-white text-sm mb-3 flex items-center gap-2">
-              <Bell className="w-4 h-4 text-indigo-400" /> Simulate Notifications (Pitch Mode)
-            </h3>
-            <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => triggerSystemNotification("⚠️ Expiring Soon", "Your Spinach and Milk are expiring in 2 days!")} className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left cursor-pointer">Freshness Alert</button>
-              <button onClick={() => triggerSystemNotification("💰 Budget Goal Met", "Great job! You stayed under $150 this week.")} className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left cursor-pointer">Budget Success</button>
-              <button onClick={() => triggerSystemNotification("❄️ Defrost Alert", "Move Chicken from Freezer to Fridge tonight.")} className="px-3 py-2 bg-gray-800 text-gray-300 rounded-lg text-[10px] font-bold hover:bg-gray-700 text-left border-l-2 border-blue-400 cursor-pointer">Defrost Reminder</button>
-            </div>
-          </div>
-
-          {/* 6. Data Sync ID */}
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <Plus className="w-5 h-5 text-indigo-600" /> Data Sync ID
-            </h3>
-            <input
-              type="text"
-              placeholder="Enter a unique ID (e.g. Tester1)"
-              className="w-full p-3 bg-gray-50 rounded-xl text-xs outline-none border border-gray-200 focus:border-indigo-600 font-mono"
-              value={dataSyncId}
-              onChange={handleSyncIdChange}
-            />
-            <button onClick={() => window.location.reload()} className="mt-2 w-full py-2 bg-gray-100 text-gray-600 rounded-lg text-xs font-bold cursor-pointer">
-              Apply & Reload App
-            </button>
-          </div>
-
-          {/* 7. Manual Onboarding Test Trigger in Settings */}
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex justify-between items-center">
-            <div>
-              <h3 className="font-bold text-gray-900 text-sm flex items-center gap-2">
-                <ChefHat className="w-5 h-5 text-indigo-600" /> Onboarding Walkthrough
-              </h3>
-              <p className="text-xs text-gray-500">Review the step-by-step introduction and starter staples.</p>
-            </div>
-            <button
-              onClick={onRestartTour}
-              className="px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl text-xs font-bold hover:bg-indigo-100 cursor-pointer"
-            >
-              Restart Tour
-            </button>
-          </div>
-
-          {/* 9. API Configuration */}
-          <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100">
-            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <ConfigIcon className="w-5 h-5 text-indigo-600" /> API Configuration
-            </h3>
-            <input
-              type="password"
-              placeholder="Paste Gemini API Key here..."
-              className="w-full p-3 bg-gray-50 rounded-xl text-xs outline-none border border-gray-200 focus:border-indigo-600"
-              onChange={(e) => localStorage.setItem("gemini_api_key", e.target.value)}
-              defaultValue={localStorage.getItem("gemini_api_key") || ""}
-            />
-          </div>
-
-          {/* 10. Admin Portal Toggle */}
-          <div className="bg-gray-900 p-4 rounded-3xl shadow-sm border border-gray-800 flex justify-between items-center text-white">
-            <div>
-              <h3 className="font-bold text-sm flex items-center gap-2"><Briefcase className="w-4 h-4 text-indigo-400" /> Admin Portal (Demo)</h3>
-            </div>
-            <button onClick={() => onToggleAdmin(!isAdmin)} className="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-500 text-white cursor-pointer">
-              {isAdmin ? "Active" : "Enable"}
-            </button>
-          </div>
-          
-              
-
-              
-              
-            </div>
-          )}
-
-
-          
-
-          {/* 8. Go Pro */}
-          <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-4 rounded-3xl shadow-lg text-white">
-            <div className="flex justify-between items-center mb-2">
-              <h3 className="font-bold flex items-center gap-2"><Crown className="w-5 h-5 text-yellow-300" /> Go Pro</h3>
-              <span className="bg-white/20 px-2 py-1 rounded text-[10px] font-bold">BEST VALUE</span>
-            </div>
-            <button onClick={() => window.dispatchEvent(new CustomEvent("openSubscription"))} className="w-full py-2 bg-white text-indigo-600 rounded-xl text-xs font-bold shadow-sm cursor-pointer">
-              Upgrade Now
-            </button>
-          </div>
-
-          
-
-          {/* 11. Dietary Preferences */}
-          <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""}`}>
-            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <Utensils className="w-5 h-5 text-indigo-600" /> Dietary Preferences
-            </h3>
-            <div className="flex flex-wrap gap-2">
-              {diets.map((d) => (
-                <button
-                  key={d}
-                  type="button"
-                  onClick={() => toggleItem("diets", d)}
-                  className={`px-4 py-2 rounded-full text-xs font-bold border cursor-pointer ${localProfile.diets?.includes(d) ? "bg-indigo-600 text-white" : "bg-white"}`}
-                >
-                  {d}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 👉 12. Cuisine Match Weighting Sliders on Profile Page */}
-          <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""}`}>
-            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <ChefHat className="w-5 h-5 text-indigo-600" /> Cuisine Preferences (Match Weighting)
-            </h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {Object.keys(localProfile.cuisinePreferences || { American: 3, "Soul Food": 4, Mexican: 3, Italian: 3, Asian: 3, Indian: 3, Mediterranean: 3, Thai: 3, Caribbean: 3, French: 3, Chinese: 3, Greek: 3, German: 3, Filipino: 3, Japanese: 3 }).map((cuisine) => {
-                const currentVal = (localProfile.cuisinePreferences || {})[cuisine] || 3;
-                return (
-                  <div key={cuisine} className="space-y-1 bg-gray-50 p-3 rounded-2xl border border-gray-100">
-                    <div className="flex justify-between text-xs font-bold text-gray-700">
-                      <span>{cuisine}</span>
-                      <span className="text-indigo-600 font-mono">{currentVal}/5</span>
-                    </div>
-                    <input
-                      type="range"
-                      min="1"
-                      max="5"
-                      value={currentVal}
-                      onChange={(e) => {
-                        const updatedPrefs = {
-                          ...(localProfile.cuisinePreferences || { American: 3, "Soul Food": 4, Mexican: 3, Italian: 3, Asian: 3, Indian: 3, Mediterranean: 3, Thai: 3, Caribbean: 3, French: 3, Chinese: 3, Greek: 3, German: 3, Filipino: 3, Japanese: 3 }),
-                          [cuisine]: parseInt(e.target.value)
-                        };
-                        setLocalProfile({ ...localProfile, cuisinePreferences: updatedPrefs });
-                      }}
-                      className="w-full accent-indigo-600 h-1.5 bg-gray-200 rounded-lg cursor-pointer"
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Household & AI Taste Profile Settings UI (#29 & #57) */}
-          <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""}`}>
-            <h3 className="font-bold text-gray-900 flex items-center gap-2">
-              <Users className="w-5 h-5 text-indigo-600" /> Household & AI Taste Profile Engine
-            </h3>
-            <p className="text-xs text-gray-500 leading-relaxed">
-              Configure your household composition, health objectives, and flavor profiles to let the smart assistant tailor macro targets and dietary guardrails automatically.
-            </p>
-
-            {/* 13. Health Goals Selection */}
-            <div className="space-y-1.5 pt-2 border-t border-gray-100">
-              <label className="block text-[10px] font-bold text-gray-500 uppercase">Health Goals & Medical Diets</label>
-              <div className="flex flex-wrap gap-1.5">
-                {["Weight Loss", "Mass-Building / High Protein", "Pregnancy / Postnatal", "Diabetes-Friendly", "Low Sodium", "Heart Healthy"].map((goal) => {
-                  const isSelected = (localProfile.healthGoals || []).includes(goal);
-                  return (
-                    <button
-                      key={goal}
-                      type="button"
-                      onClick={() => {
-                        const current = localProfile.healthGoals || [];
-                        const updated = isSelected ? current.filter(g => g !== goal) : [...current, goal];
-                        setLocalProfile({ ...localProfile, healthGoals: updated });
-                      }}
-                      className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all cursor-pointer ${
-                        isSelected ? "bg-indigo-600 text-white border-indigo-600" : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
-                      }`}
-                    >
-                      {goal}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* 14. Disliked Foods & Ingredients */}
-            <div className="space-y-1.5 pt-2">
-              <label className="block text-[10px] font-bold text-gray-500 uppercase">Disliked Foods & Aversions (Comma Separated)</label>
-              <input
-                type="text"
-                placeholder="e.g. cilantro, blue cheese, mushrooms, heavy spice"
-                value={localProfile.dislikedFoods || ""}
-                onChange={(e) => setLocalProfile({ ...localProfile, dislikedFoods: e.target.value })}
-                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            {/* 15. Kid Preferences & Family Adaptations */}
-            <div className="space-y-1.5 pt-2">
-              <label className="block text-[10px] font-bold text-gray-500 uppercase">Household / Kid Preferences & Adaptations</label>
-              <textarea
-                value={localProfile.kidPreferences || ""}
-                onChange={(e) => setLocalProfile({ ...localProfile, kidPreferences: e.target.value })}
-                placeholder="Describe any picky eater accommodations, e.g. prefers mild seasoning, separate sauces..."
-                className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500 h-20 resize-none"
-              />
-            </div>
-          </div>
-
-          {/* 16. Equipment */}
-          <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""}`}>
-            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-              <CookingPot className="w-5 h-5 text-indigo-600" /> Equipment
-            </h3>
-            <div className="flex flex-wrap gap-2 mb-4">
-              {displayEquipment.map((e) => (
-                <button
-                  key={e}
-                  type="button"
-                  onClick={() => toggleItem("equipment", e)}
-                  className={`px-4 py-2 rounded-full text-xs font-bold border cursor-pointer ${localProfile.equipment?.includes(e) ? "bg-indigo-600 text-white" : "bg-white"}`}
-                >
-                  {e}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* 👉 PLATFORM GOVERNANCE FOOTER LINKS */}
-          <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm text-center space-y-2">
-            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Platform Governance</p>
-            <div className="flex justify-center gap-4 text-xs font-bold text-indigo-600">
-              <button
-                onClick={onOpenGuidelines} // 👉 Hook up to prop
-                className="hover:underline cursor-pointer"
-              >
-                Community Guidelines
-              </button>
-              <span className="text-gray-300">•</span>
-              <button
-                onClick={onOpenLegal} // 👉 Hook up to prop
-                className="hover:underline cursor-pointer"
-              >
-                Terms & Privacy Policy
-              </button>
-            </div>
-          </div>
-
-          {/* Save Profile Button */}
-          {isDemoAuthenticated && (
-            <button
-              onClick={() => onSaveProfile(localProfile)}
-              className="w-full py-4 bg-indigo-600 text-white rounded-2xl font-bold shadow-lg cursor-pointer"
-            >
-              Save Profile
-            </button>
-          )}
         </div>
-      
+      </div>
     </div>
   );
-};
+}

@@ -1,7 +1,9 @@
 import React, { useState } from "react";
-import { X, Clock, Play } from "lucide-react";
+import { Clock, Calendar, X } from "lucide-react";
 
-export default function ReverseSchedulerModal({ pinnedRecipes = [], onClose, onStartScheduledTimers }) {
+
+
+function ReverseSchedulerModal({ pinnedRecipes = [], onClose, onStartScheduledTimers }) {
   const [targetTime, setTargetTime] = useState("19:00"); // Default dinner time 7:00 PM
 
   const parsePrepMinutes = (prepTimeString) => {
@@ -112,3 +114,5 @@ export default function ReverseSchedulerModal({ pinnedRecipes = [], onClose, onS
     </div>
   );
 }
+
+export default ReverseSchedulerModal;

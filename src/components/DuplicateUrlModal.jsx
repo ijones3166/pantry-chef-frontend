@@ -1,3 +1,6 @@
+import React from "react";
+import { X, AlertTriangle } from "lucide-react";
+
 // 👉 LANDMARK: Duplicate URL Resolution Modal for Regular Users
 const DuplicateUrlModal = ({ matchData, onClose, onViewExisting, onForceUpload }) => {
   if (!matchData) return null;
@@ -63,3 +66,6 @@ const DuplicateUrlModal = ({ matchData, onClose, onViewExisting, onForceUpload }
     </div>
   );
 };
+
+
+export default DuplicateUrlModal;

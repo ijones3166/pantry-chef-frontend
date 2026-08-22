@@ -1,7 +1,7 @@
-import React from 'react';
-import { ExternalLink, ShieldCheck, X } from 'lucide-react';
+import React from "react";
+import { X, ExternalLink, ShieldCheck } from "lucide-react";
 
-export default function BrandedRedirectModal({ isOpen, onClose, partnerData }) {
+function BrandedRedirectModal({ isOpen, onClose, partnerData }) {
   if (!isOpen || !partnerData) return null;
 
   const { title, url, logo, description, sponsorTag } = partnerData;
@@ -71,3 +71,6 @@ export default function BrandedRedirectModal({ isOpen, onClose, partnerData }) {
     </div>
   );
 }
+
+
+export default BrandedRedirectModal;

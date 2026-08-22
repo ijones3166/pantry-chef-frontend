@@ -1,22 +1,28 @@
-// NEW: Login Modal Simulator
-// --- LOGIN MODAL COMPONENT ---
-const LoginModal = ({ onClose, onLogin }) => {
+import React, { useState } from "react";
+import { ChefHat, Loader } from "lucide-react";
+import { getAuth, GoogleAuthProvider, signInWithPopup, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
+
+function LoginModal({ onClose, onLogin }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isRegistering, setIsRegistering] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  const auth = getAuth();
 
   const handleGoogleLogin = async () => {
     if (!auth) return alert("Firebase not connected.");
     try {
       setLoading(true);
       const provider = new GoogleAuthProvider();
+      
+      // Back to popup, no more 404 redirect loops!
       await signInWithPopup(auth, provider);
       onLogin();
+      
     } catch (err) {
       console.error("Google Auth Error:", err);
       alert(err.message);
-    } finally {
       setLoading(false);
     }
   };
@@ -112,4 +118,7 @@ const LoginModal = ({ onClose, onLogin }) => {
       </div>
     </div>
   );
-};
+}
+
+
+export default LoginModal;

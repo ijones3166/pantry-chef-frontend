@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
-import { ChefHat, Plus, Sparkles, Package, Calendar, ArrowRight, X, Check } from 'lucide-react';
+import React, { useState } from "react";
+import { Calendar, Clock, Package, CheckSquare, Square } from "lucide-react";
 
-export default function MealPrepView({ onClose, recipes = [], pantryItems = [], onScheduleMeal, onAddToInventory }) {
+
+
+function MealPrepView({ onClose, recipes = [], pantryItems = [], onScheduleMeal, onAddToInventory }) {
   const [selectedRecipe, setSelectedRecipe] = useState(null);
   const [batchMultiplier, setBatchMultiplier] = useState(3);
   const [prepPrompt, setPrepPrompt] = useState("");
@@ -285,3 +287,5 @@ export default function MealPrepView({ onClose, recipes = [], pantryItems = [], 
     </div>
   );
 }
+
+export default MealPrepView;
