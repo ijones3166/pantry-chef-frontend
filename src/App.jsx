@@ -200,7 +200,15 @@ import { getRecommendedShelfLife } from "./utils/shelfLifeEngine";
 // =================================================================================
 // 2. CONFIGURATION & ENVIRONMENT SETUP
 // =================================================================================
-const manualFirebaseConfig = { apiKey: "AIzaSyC6luWdWNNlEmOxbLCrGqvwyeR4sTFrw7g", authDomain: "pantry-app-b7ba3.firebaseapp.com", projectId: "pantry-app-b7ba3", storageBucket: "pantry-app-b7ba3.firebasestorage.app", messagingSenderId: "506786530032", appId: "1:506786530032:web:6fca904b8ea51f9cfe7835", measurementId: "G-1XP7SP4GF3", };
+const manualFirebaseConfig = {
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID,
+};
 const appId = typeof __app_id !== "undefined" ? __app_id : "pantry-chef-mobile-v1";
 const firebaseConfig = typeof __firebase_config !== "undefined" ? JSON.parse(__firebase_config) : manualFirebaseConfig;
 const DAILY_API_LIMIT = 50;
