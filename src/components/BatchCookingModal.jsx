@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { X, ChefHat, Clock, Flame, Check } from "lucide-react";
+import { X, ChefHat, Clock, Flame, Check, Zap, Package, CheckCircle } from "lucide-react";
 
 
 
@@ -36,7 +36,7 @@ function BatchCookingModal({ recipe, inventory, onClose, onSaveBatch }) {
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 animate-in fade-in">
+    <div className="fixed inset-0 bg-black/60 z-70 flex items-center justify-center p-4 animate-in fade-in">
       <div className="bg-white w-full max-w-lg rounded-3xl p-6 shadow-2xl space-y-5 animate-in slide-in-from-bottom">
         
         {/* Header */}

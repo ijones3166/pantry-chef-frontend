@@ -1,16 +1,22 @@
 import React, { useState } from "react";
-import { ChefHat, MapPin, Check, ChevronRight, X } from "lucide-react";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { 
+  ChefHat, 
+  UserCircle, 
+  Scan, 
+  Speaker, 
+  CheckCircle, 
+  Plus, 
+  X 
+} from "lucide-react";
 import { resizeImage } from "../utils/formatters";
-
-
-
 
 const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, onScanReceipt }) => {
   const [step, setStep] = useState(1);
   
-  // Frame 2: Personal Info
-  const [name, setName] = useState("");
+  // Frame 2: Personal Info & Extended Metadata
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [name, setName] = useState(""); // Display / Chef Name
   const [email, setEmail] = useState("");
   const [zipCode, setZipCode] = useState("");
   const [instagram, setInstagram] = useState("");
@@ -63,71 +69,70 @@ const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, on
     "Sous Vide", "Grill", "Smoker", "Microwave", "Toaster", "Immersion Blender", "Mandoline", "Pizza Stone"
   ];
 
-  // 🗂️ Normalized 3-Tier Granular Staples Database
   const categorizedStaples = {
     "Pantry & Grains": [
-      { name: "Grains > Pasta > Dried: Spaghetti", base: "Spaghetti" },
-      { name: "Grains > Pasta > Dried: Penne", base: "Penne" },
-      { name: "Grains > Rice > White: Jasmine", base: "Jasmine Rice" },
-      { name: "Grains > Rice > White: Basmati", base: "Basmati Rice" },
-      { name: "Grains > Rice > Speciality: Arborio", base: "Arborio Rice" },
-      { name: "Grains > Noodles > Asian: Rice Noodles", base: "Rice Noodles" },
-      { name: "Grains > Flour > All-Purpose", base: "Flour" },
-      { name: "Grains > Baking > Masa Harina", base: "Masa Harina" },
-      { name: "Grains > Bread Crumbs", base: "Bread Crumbs" },
+      { name: "Spaghetti (Dried)", base: "Spaghetti" },
+      { name: "Penne Pasta", base: "Penne" },
+      { name: "Jasmine Rice", base: "Jasmine Rice" },
+      { name: "Basmati Rice", base: "Basmati Rice" },
+      { name: "Arborio Rice", base: "Arborio Rice" },
+      { name: "Rice Noodles", base: "Rice Noodles" },
+      { name: "All-Purpose Flour", base: "Flour" },
+      { name: "Masa Harina", base: "Masa Harina" },
+      { name: "Bread Crumbs", base: "Bread Crumbs" },
     ],
     "Beans & Tomatoes": [
-      { name: "Pantry > Beans > Black (Dried)", base: "Black Beans" },
-      { name: "Pantry > Beans > Black (Canned)", base: "Black Beans" },
-      { name: "Pantry > Beans > Pinto (Dried)", base: "Pinto Beans" },
-      { name: "Pantry > Beans > Pinto (Canned)", base: "Pinto Beans" },
-      { name: "Pantry > Beans > Garbanzo (Dried)", base: "Garbanzo Beans" },
-      { name: "Pantry > Tomatoes > Canned: Crushed", base: "Crushed Tomatoes" },
-      { name: "Pantry > Tomato Paste", base: "Tomato Paste" },
+      { name: "Black Beans (Dried)", base: "Black Beans" },
+      { name: "Black Beans (Canned)", base: "Black Beans" },
+      { name: "Pinto Beans (Dried)", base: "Pinto Beans" },
+      { name: "Pinto Beans (Canned)", base: "Pinto Beans" },
+      { name: "Garbanzo Beans", base: "Garbanzo Beans" },
+      { name: "Crushed Tomatoes (Canned)", base: "Crushed Tomatoes" },
+      { name: "Tomato Paste", base: "Tomato Paste" },
     ],
     "Proteins & Dairy": [
-      { name: "Protein > Beef > Ground (70/30)", base: "Ground Beef", fat: 70 },
-      { name: "Protein > Beef > Ground (90/10)", base: "Ground Beef", fat: 90 },
-      { name: "Protein > Beef > Chuck Roast", base: "Chuck Roast" },
-      { name: "Protein > Beef > Ribeye Steak", base: "Ribeye Steak" },
-      { name: "Protein > Chicken > Whole & Parts", base: "Chicken" },
-      { name: "Protein > Pork > Pancetta", base: "Pancetta" },
-      { name: "Protein > Meat > Italian Sausage", base: "Italian Sausage" },
-      { name: "Protein > Seafood > Shrimp", base: "Shrimp" },
-      { name: "Dairy > Butter (Salted)", base: "Butter" },
-      { name: "Dairy > Cheese: Parmesan Block", base: "Parmesan" },
-      { name: "Dairy > Cheese: Fresh Mozzarella", base: "Mozzarella" },
-      { name: "Dairy > Eggs", base: "Eggs" },
+      { name: "Ground Beef (70/30)", base: "Ground Beef" },
+      { name: "Ground Beef (90/10)", base: "Ground Beef" },
+      { name: "Chuck Roast", base: "Chuck Roast" },
+      { name: "Ribeye Steak", base: "Ribeye Steak" },
+      { name: "Chicken Breast / Thighs", base: "Chicken" },
+      { name: "Pancetta", base: "Pancetta" },
+      { name: "Italian Sausage", base: "Italian Sausage" },
+      { name: "Shrimp", base: "Shrimp" },
+      { name: "Salted Butter", base: "Butter" },
+      { name: "Parmesan Cheese", base: "Parmesan" },
+      { name: "Fresh Mozzarella", base: "Mozzarella" },
+      { name: "Eggs", base: "Eggs" },
     ],
     "Produce & Aromatics": [
-      { name: "Produce > Aromatics > Garlic (Fresh)", base: "Garlic" },
-      { name: "Produce > Aromatics > Onion (Yellow/Red)", base: "Onion" },
-      { name: "Produce > Aromatics > Shallots", base: "Shallots" },
-      { name: "Produce > Herbs > Basil (Fresh)", base: "Basil" },
-      { name: "Produce > Root > Ginger (Fresh)", base: "Ginger" },
-      { name: "Produce > Citrus > Limes", base: "Limes" },
-      { name: "Produce > Citrus > Lemons", base: "Lemons" },
-      { name: "Produce > Herbs > Cilantro", base: "Cilantro" },
-      { name: "Produce > Peppers > Jalapeños (Fresh)", base: "Jalapeños" },
+      { name: "Garlic (Fresh)", base: "Garlic" },
+      { name: "Yellow/Red Onion", base: "Onion" },
+      { name: "Shallots", base: "Shallots" },
+      { name: "Fresh Basil", base: "Basil" },
+      { name: "Fresh Ginger", base: "Ginger" },
+      { name: "Limes", base: "Limes" },
+      { name: "Lemons", base: "Lemons" },
+      { name: "Fresh Cilantro", base: "Cilantro" },
+      { name: "Jalapeños", base: "Jalapeños" },
     ],
     "Oils, Sauces & Condiments": [
-      { name: "Spices > Oils > Extra Virgin Olive Oil", base: "Olive Oil" },
-      { name: "Spices > Oils > Toasted Sesame Oil", base: "Sesame Oil" },
-      { name: "Spices > Vinegar > Balsamic", base: "Balsamic Vinegar" },
-      { name: "Spices > Condiments > Soy Sauce", base: "Soy Sauce" },
-      { name: "Spices > Condiments > Miso Paste", base: "Miso Paste" },
-      { name: "Spices > Condiments > Chili Crisp", base: "Chili Crisp" },
-      { name: "Spices > Condiments > Kewpie Mayo", base: "Kewpie Mayo" },
-      { name: "Spices > Condiments > Peanut Butter", base: "Peanut Butter" },
+      { name: "Extra Virgin Olive Oil", base: "Olive Oil" },
+      { name: "Toasted Sesame Oil", base: "Sesame Oil" },
+      { name: "Balsamic Vinegar", base: "Balsamic Vinegar" },
+      { name: "Soy Sauce", base: "Soy Sauce" },
+      { name: "Miso Paste", base: "Miso Paste" },
+      { name: "Chili Crisp", base: "Chili Crisp" },
+      { name: "Mayonnaise", base: "Mayonnaise" },
+      { name: "Peanut Butter", base: "Peanut Butter" },
     ],
     "Baking & Spices": [
-      { name: "Baking > Sugar > White & Brown", base: "Sugar" },
-      { name: "Baking > Sweeteners > Honey", base: "Honey" },
-      { name: "Spices > Salt & Black Pepper", base: "Black Pepper" },
-      { name: "Spices > Garlic Powder", base: "Garlic Powder" },
-      { name: "Spices > Onion Powder", base: "Onion Powder" },
-      { name: "Spices > Dried Oregano", base: "Dried Oregano" },
-      { name: "Pantry > Broths > Chicken, Beef, Veggie", base: "Broth" },
+      { name: "Granulated Sugar", base: "Sugar" },
+      { name: "Honey", base: "Honey" },
+      { name: "Black Pepper", base: "Black Pepper" },
+      { name: "Garlic Powder", base: "Garlic Powder" },
+      { name: "Onion Powder", base: "Onion Powder" },
+      { name: "Dried Oregano", base: "Dried Oregano" },
+      { name: "Broth (Chicken/Beef/Veggie)", base: "Broth" },
     ]
   };
 
@@ -138,24 +143,28 @@ const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, on
   };
 
   const handleCuisineWeightChange = (cuisine, val) => {
-    setCuisinePreferences((prev) => ({ ...prev, [cuisine]: parseInt(val) }));
+    setCuisinePreferences((prev) => ({ ...prev, [cuisine]: parseInt(val, 10) }));
   };
 
-  const handleQuickAddStaple = (stapleName) => {
-    if (!addedStaples.includes(stapleName)) {
-      setAddedStaples((prev) => [...prev, stapleName]);
-      if (onAddToPantry) onAddToPantry(stapleName);
+  const handleQuickAddStaple = (stapleItem) => {
+    const canonicalName = stapleItem.base || stapleItem.name;
+    if (!addedStaples.includes(canonicalName)) {
+      setAddedStaples((prev) => [...prev, canonicalName]);
+      if (onAddToPantry) onAddToPantry(canonicalName);
     }
   };
 
   const handleFinish = () => {
     onSavePreferences({
-      name,
+      firstName,
+      lastName,
+      name: name.trim() || `${firstName} ${lastName}`.trim() || "Chef",
       email,
       zipCode,
       instagram,
       tiktok,
       image: profilePhoto,
+      avatar: profilePhoto,
       householdSize,
       diets: selectedDiets,
       equipment: selectedEquipment,
@@ -222,11 +231,11 @@ const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, on
             <div className="space-y-2">
               <h4 className="font-black text-lg text-gray-900">Your First Step to Smarter Cooking</h4>
               <p className="text-xs text-gray-600 leading-relaxed max-w-sm mx-auto">
-                Pantry Chef is built to help you waste less and save more. The best way to use the app is to fill out as much profile and inventory information as possible upfront. The assistant learns from how you interact with your pantry, meals, and grocery lists to tailor everything specifically to you.
+                Pantry Chef is built to help you waste less and save more. Filling out your profile upfront allows the assistant to customize meal plans, dietary guardrails, and pantry calculations to your kitchen.
               </p>
             </div>
             <div className="p-3 bg-gray-50 rounded-2xl border border-gray-100 text-[11px] text-gray-500">
-              Don't worry - you can always update or change any of these settings later inside your profile.
+              You can adjust or expand any of these preferences anytime inside your Settings Profile.
             </div>
             <button
               onClick={() => setStep(2)}
@@ -242,31 +251,56 @@ const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, on
           <div className="space-y-4 animate-in fade-in">
             <div className="text-center">
               <h4 className="font-bold text-sm text-gray-900">Personal Information</h4>
-              <p className="text-xs text-gray-500">Tell us a bit about yourself so we can personalize your experience.</p>
+              <p className="text-xs text-gray-500">Setup your identity and location for localized store deals and tailored feeds.</p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* First & Last Name */}
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Name</label>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">First Name</label>
                 <input
                   type="text"
-                  placeholder="e.g. Ishon Jones"
+                  placeholder="First name"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500 text-gray-900"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Last Name</label>
+                <input
+                  type="text"
+                  placeholder="Last name"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500 text-gray-900"
+                />
+              </div>
+            </div>
+
+            {/* Display Name & Zip Code */}
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Display Name (Chef Name)</label>
+                <input
+                  type="text"
+                  placeholder="e.g. Chef Ishon"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500"
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500 text-gray-900"
                 />
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1">Zip Code</label>
                 <input
                   type="text"
-                  placeholder="e.g. 90210"
+                  placeholder="e.g. 92543"
                   maxLength={5}
                   value={zipCode}
                   onChange={(e) => setZipCode(e.target.value)}
-                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500"
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500 text-gray-900"
                 />
-                <span className="text-[8px] text-gray-400">Used for local grocery deals & pricing</span>
+                <span className="text-[8px] text-gray-400">Used for grocery deals & local pricing</span>
               </div>
             </div>
 
@@ -277,18 +311,18 @@ const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, on
                 placeholder="you@example.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500"
+                className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500 text-gray-900"
               />
               <p className="text-[9px] text-gray-400 mt-0.5">
-                🔒 Your email is never shared with third parties or advertisers. It is used strictly for logging in, notifications, and account communications.
+                🔒 Strictly used for login authentication, approval alerts, and notifications.
               </p>
             </div>
 
-            {/* Social Handles with Integrated Note */}
+            {/* Social Handles */}
             <div className="space-y-2">
               <div className="flex justify-between items-center">
                 <label className="text-[10px] font-bold text-gray-500 uppercase">Social Handles</label>
-                <span className="text-[9px] text-gray-400">Socials display on your public profile</span>
+                <span className="text-[9px] text-gray-400">Optional: links on community cards</span>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <input
@@ -296,14 +330,14 @@ const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, on
                   placeholder="Instagram @username"
                   value={instagram}
                   onChange={(e) => setInstagram(e.target.value)}
-                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500"
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500 text-gray-900"
                 />
                 <input
                   type="text"
                   placeholder="TikTok @username"
                   value={tiktok}
                   onChange={(e) => setTiktok(e.target.value)}
-                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500"
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500 text-gray-900"
                 />
               </div>
             </div>
@@ -349,7 +383,7 @@ const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, on
             <div className="text-center">
               <h4 className="font-bold text-sm text-gray-900">Your Cooking Profile</h4>
               <p className="text-xs text-gray-500 leading-relaxed max-w-sm mx-auto">
-                This information is used to present recipes specific to what you can do. We provide smart substitutions so you never miss out on meals - adapting recipes to fit your equipment rather than restricting your choices.
+                Recipes and meal plans will automatically scale to your headcount and prioritize equipment you actually own.
               </p>
             </div>
 
@@ -377,7 +411,7 @@ const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, on
             {/* Dietary Preferences & Allergies */}
             <div>
               <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Dietary Preferences & Allergies</label>
-              <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto pr-1">
+              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
                 {dietsList.map((d) => (
                   <button
                     key={d}
@@ -397,7 +431,7 @@ const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, on
 
             {/* Cooking Equipment & Appliances */}
             <div>
-              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Cooking Equipment & Appliances (Kitchen & Outdoor)</label>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Cooking Equipment & Appliances</label>
               <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
                 {equipmentList.map((eq) => (
                   <button
@@ -416,9 +450,9 @@ const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, on
               </div>
             </div>
 
-            {/* Cuisine Preference Sliders (Weight Scale 1-5) */}
+            {/* Cuisine Preference Sliders */}
             <div className="space-y-2 bg-gray-50 p-3 rounded-2xl border border-gray-200">
-              <label className="block text-[10px] font-bold text-gray-500 uppercase">Cuisine Preferences (Match Weighting)</label>
+              <label className="block text-[10px] font-bold text-gray-500 uppercase">Cuisine Match Weighting (1 - 5)</label>
               <div className="grid grid-cols-2 gap-x-4 gap-y-2">
                 {Object.keys(cuisinePreferences).map((cuisine) => (
                   <div key={cuisine} className="space-y-0.5">
@@ -462,11 +496,11 @@ const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, on
             <div className="text-center space-y-1">
               <h4 className="font-bold text-sm text-gray-900">Stock Your Initial Pantry</h4>
               <p className="text-xs text-gray-500 leading-relaxed">
-                This is just to get you started quickly - you can always go crazy adding more items later.
+                Add your common baseline items now so the AI can calculate your initial ingredient match rates.
               </p>
             </div>
 
-            {/* Ways to Add (Light & Fast Options) */}
+            {/* Ingestion Shortcuts */}
             <div className="grid grid-cols-2 gap-2">
               <label className="bg-indigo-50 border border-indigo-100 p-2.5 rounded-xl cursor-pointer flex flex-col items-center justify-center text-center hover:bg-indigo-100 transition-colors">
                 <Scan className="w-4 h-4 text-indigo-600 mb-0.5" />
@@ -478,11 +512,11 @@ const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, on
               <div className="bg-purple-50 border border-purple-100 p-2.5 rounded-xl flex flex-col items-center justify-center text-center">
                 <Speaker className="w-4 h-4 text-purple-600 mb-0.5" />
                 <span className="text-xs font-bold text-purple-900">Voice Input</span>
-                <span className="text-[8px] text-purple-500">Fast & low cost</span>
+                <span className="text-[8px] text-purple-500">Available inside app</span>
               </div>
             </div>
 
-            {/* Category Tabs (Desktop Wrapping Enabled) */}
+            {/* Category Tabs */}
             <div className="space-y-2">
               <div className="flex md:flex-wrap overflow-x-auto md:overflow-visible gap-1 pb-1 md:pb-0 scrollbar-hide border-b border-gray-100">
                 {Object.keys(categorizedStaples).map((cat) => (
@@ -513,12 +547,13 @@ const OnboardingModal = ({ isOpen, onClose, onSavePreferences, onAddToPantry, on
                 </div>
                 <div className="flex flex-wrap gap-1.5">
                   {categorizedStaples[activeCategoryTab].map((s) => {
-                    const isAdded = addedStaples.includes(s.name);
+                    const canonicalName = s.base || s.name;
+                    const isAdded = addedStaples.includes(canonicalName);
                     return (
                       <button
                         key={s.name}
                         type="button"
-                        onClick={() => handleQuickAddStaple(s.name)}
+                        onClick={() => handleQuickAddStaple(s)}
                         className={`px-2.5 py-1.5 rounded-xl text-[11px] font-medium border transition-all cursor-pointer flex items-center gap-1 ${
                           isAdded
                             ? "bg-green-100 text-green-800 border-green-300 font-bold"

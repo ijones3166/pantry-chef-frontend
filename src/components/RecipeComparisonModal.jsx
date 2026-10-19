@@ -36,7 +36,8 @@ function RecipeComparisonModal({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/70 z-[100] flex items-center justify-center p-3 sm:p-6 animate-in fade-in">
+    
+    <div className="fixed inset-0 bg-black/70 z-[130] flex items-center justify-center p-3 sm:p-6 animate-in fade-in">
       <div className="bg-white w-full max-w-4xl max-h-[90vh] rounded-3xl p-6 shadow-2xl flex flex-col overflow-hidden animate-in slide-in-from-bottom">
         
         {/* Header */}

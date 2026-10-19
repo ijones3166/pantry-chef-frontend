@@ -1,9 +1,9 @@
 import React, { useState } from "react";
-import { Clock, Calendar, X } from "lucide-react";
+import { Clock, Calendar, X, Play } from "lucide-react";
 
 
 
-function ReverseSchedulerModal({ pinnedRecipes = [], onClose, onStartScheduledTimers }) {
+function ReverseSchedulerModal({ pinnedRecipes = [], onClose, onStartScheduledTimers, onUnpinRecipe }) {
   const [targetTime, setTargetTime] = useState("19:00"); // Default dinner time 7:00 PM
 
   const parsePrepMinutes = (prepTimeString) => {
@@ -21,21 +21,33 @@ function ReverseSchedulerModal({ pinnedRecipes = [], onClose, onStartScheduledTi
   };
 
   const [targetHours, targetMins] = targetTime.split(":").map(Number);
+  const now = new Date();
   const targetDate = new Date();
   targetDate.setHours(targetHours, targetMins, 0, 0);
 
+  // Rollover check: If target time is earlier than or equal to now, advance to tomorrow
+  if (targetDate.getTime() <= now.getTime()) {
+    targetDate.setDate(targetDate.getDate() + 1);
+  }
+  const isTomorrow = targetDate.getDate() !== now.getDate();
+
   const scheduledDishes = pinnedRecipes.map((recipe) => {
-    const durationMins = parsePrepMinutes(recipe.prepTime);
+    const prepMins = parsePrepMinutes(recipe.prepTime || "15 mins");
+    const cookMins = parsePrepMinutes(recipe.cookTime || "0 mins");
+    const durationMins = prepMins + cookMins;
     const startTime = new Date(targetDate.getTime() - durationMins * 60000);
+
     return {
       ...recipe,
+      prepMins,
+      cookMins,
       durationMins,
       startTime
     };
   }).sort((a, b) => b.durationMins - a.durationMins);
 
   const formatTime = (date) => {
-    return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   };
 
   return (
@@ -64,12 +76,21 @@ function ReverseSchedulerModal({ pinnedRecipes = [], onClose, onStartScheduledTi
             <p className="text-xs font-bold text-indigo-900">Target Serving / Finish Time</p>
             <p className="text-[10px] text-indigo-600">When do you want everything on the table?</p>
           </div>
-          <input
-            type="time"
-            value={targetTime}
-            onChange={(e) => setTargetTime(e.target.value)}
-            className="p-2.5 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-indigo-900 outline-none cursor-pointer shadow-xs"
-          />
+          <div className="flex items-center gap-2">
+            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider ${
+              isTomorrow
+                ? "bg-purple-100 text-purple-700 border border-purple-200"
+                : "bg-emerald-100 text-emerald-700 border border-emerald-200"
+            }`}>
+              {isTomorrow ? "Tomorrow" : "Tonight"}
+            </span>
+            <input
+              type="time"
+              value={targetTime}
+              onChange={(e) => setTargetTime(e.target.value)}
+              className="p-2.5 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-indigo-900 outline-none cursor-pointer shadow-xs"
+            />
+          </div>
         </div>
 
         {/* Timeline Checklist */}
@@ -82,14 +103,31 @@ function ReverseSchedulerModal({ pinnedRecipes = [], onClose, onStartScheduledTi
           ) : (
             <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
               {scheduledDishes.map((dish, i) => (
-                <div key={i} className="bg-gray-50 p-3.5 rounded-2xl border border-gray-200 flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <span className="text-[10px] font-bold text-indigo-600 uppercase">Start at {formatTime(dish.startTime)}</span>
-                    <p className="text-sm font-black text-gray-900">{dish.title}</p>
-                    <p className="text-[10px] text-gray-400">Prep/Cook duration: {dish.prepTime || `${dish.durationMins} mins`}</p>
+                <div key={i} className="bg-gray-50 p-3.5 rounded-2xl border border-gray-200 flex items-center justify-between gap-3 shadow-2xs">
+                  <div className="space-y-0.5 min-w-0 flex-1">
+                    <span className="text-[10px] font-bold text-indigo-600 uppercase">
+                      Start at {formatTime(dish.startTime)}
+                    </span>
+                    <p className="text-sm font-black text-gray-900 truncate">{dish.title}</p>
+                    <p className="text-[10px] text-gray-400">
+                      Total: {dish.durationMins} mins (Prep: {dish.prepMins}m, Cook: {dish.cookMins}m)
+                    </p>
                   </div>
-                  <div className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-xs font-bold font-mono text-gray-700 shadow-2xs">
-                    #{i + 1}
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <div className="w-7 h-7 rounded-full bg-white border border-gray-200 flex items-center justify-center text-xs font-bold font-mono text-gray-700 shadow-2xs">
+                      #{i + 1}
+                    </div>
+                    {onUnpinRecipe && (
+                      <button
+                        type="button"
+                        onClick={() => onUnpinRecipe(dish)}
+                        className="p-1 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                        title="Remove dish from schedule"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

@@ -1,5 +1,21 @@
 import React, { useState } from "react";
-import { Share2, X, Check, Globe } from "lucide-react";
+import { 
+  Share2, 
+  X, 
+  Check, 
+  Globe, 
+  Scan, 
+  ArrowLeft, 
+  CheckCircle, 
+  Sparkles, 
+  Plus, 
+  Trash2, 
+  Eye, 
+  Clock, 
+  Users, 
+  Loader, 
+  Send 
+} from "lucide-react";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 
 

@@ -20,26 +20,45 @@ export default function NutritionReportView({
     return logDate >= cutoff;
   });
 
+  // Helper to safely strip non-numeric characters and strings like "14g"
+  const parseMacro = (val) => {
+    if (typeof val === "number") return val;
+    if (!val) return 0;
+    const parsed = parseFloat(String(val).replace(/[^0-9.]/g, ""));
+    return isNaN(parsed) ? 0 : parsed;
+  };
+
   const totalCals = filteredLogs.reduce(
-    (sum, item) => sum + (item.calories || 0),
+    (sum, item) => sum + parseMacro(item.calories),
     0
   );
   const totalProtein = filteredLogs.reduce(
-    (sum, item) => sum + (item.protein || 0),
+    (sum, item) => sum + parseMacro(item.protein),
     0
   );
   const totalCarbs = filteredLogs.reduce(
-    (sum, item) => sum + (item.carbs || 0),
+    (sum, item) => sum + parseMacro(item.carbs),
     0
   );
   const totalFat = filteredLogs.reduce(
-    (sum, item) => sum + (item.fat || 0),
+    (sum, item) => sum + parseMacro(item.fat),
     0
   );
 
-  const avgCals = Math.round(totalCals / daysLimit);
-  const avgProtein = Math.round(totalProtein / daysLimit);
+  // Count active logged calendar days so 1 logged meal does not divide by 7
+  const uniqueLoggedDates = new Set(
+    filteredLogs.map((log) => {
+      const date = log.timestamp?.toDate
+        ? log.timestamp.toDate()
+        : new Date(log.timestamp || Date.now());
+      return date.toDateString();
+    })
+  );
+  const activeDaysCount = Math.max(1, uniqueLoggedDates.size);
 
+  const avgCals = Math.round(totalCals / activeDaysCount);
+  const avgProtein = Math.round(totalProtein / activeDaysCount);
+  
   return (
     <div className="bg-white p-5 rounded-3xl border border-gray-200 shadow-sm space-y-5">
       <div className="flex justify-between items-center border-b border-gray-100 pb-3">
@@ -99,7 +118,7 @@ export default function NutritionReportView({
             Total Carbs
           </p>
           <p className="text-lg font-black text-emerald-950 mt-0.5">
-            {totalCarbs}g
+            {Math.round(totalCarbs)}g
           </p>
         </div>
         <div className="bg-purple-50/70 p-3 rounded-2xl border border-purple-100">
@@ -107,7 +126,7 @@ export default function NutritionReportView({
             Total Fats
           </p>
           <p className="text-lg font-black text-purple-950 mt-0.5">
-            {totalFat}g
+            {Math.round(totalFat)}g
           </p>
         </div>
       </div>

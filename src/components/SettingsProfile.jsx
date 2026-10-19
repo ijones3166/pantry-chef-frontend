@@ -1,10 +1,36 @@
 import React, { useEffect, useState } from "react";
-import { Medal, UserCircle, Mail, MapPin, Shield, Save, Scan, Plus, Battery, Crown, Utensils, ChefHat, Users, CookingPot, Briefcase, Bell, Camera, Settings as ConfigIcon, Store } from "lucide-react";
-import { doc, updateDoc } from "firebase/firestore";
-import { getStorage, ref, uploadString, getDownloadURL } from "firebase/storage";
+import { 
+  Medal, 
+  UserCircle, 
+  Mail, 
+  MapPin, 
+  Shield, 
+  Save, 
+  Scan, 
+  Plus, 
+  Battery, 
+  Crown, 
+  Utensils, 
+  ChefHat, 
+  Users, 
+  CookingPot, 
+  Briefcase, 
+  Bell, 
+  Camera, 
+  Settings as ConfigIcon, 
+  Store,
+  Calendar,
+  ChevronRight,
+  AlertCircle,
+  Trash2,
+  LogIn,
+  CheckCircle,
+  Smile,
+  Activity,
+  Heart
+} from "lucide-react";
 import { resizeImage } from "../utils/formatters";
 import NutritionReportView from "./NutritionReportView";
-
 
 const DAILY_API_LIMIT = 50;
 
@@ -36,8 +62,9 @@ export default function SettingsProfile({
   onRestartTour,
   onOpenGuidelines,
   onOpenLegal,
+  onExportMealPlanICS,
   db,
-  appdId,
+  appId,
   effectiveUserId,
   storage,
   nutritionLogs,
@@ -48,21 +75,21 @@ export default function SettingsProfile({
   const [dataSyncId, setDataSyncId] = useState(
     localStorage.getItem("pantry_chef_custom_id") || ""
   );
+  const [expandedRosterIndex, setExpandedRosterIndex] = useState(null);
   
-  // Fully restored localProfile state
   const [localProfile, setLocalProfile] = useState(
     profile || { 
       diets: [], 
       equipment: [], 
       zipCode: "",
-      cuisinePreferences: {
-        American: 3, "Soul Food": 4, Mexican: 3, Italian: 3, Asian: 3, 
-        Indian: 3, Mediterranean: 3, Thai: 3, Caribbean: 3, French: 3, 
-        Chinese: 3, Greek: 3, German: 3, Filipino: 3, Japanese: 3
-      },
+      cuisinePreferences: DEFAULT_CUISINE_PREFERENCES,
       healthGoals: [],
       dislikedFoods: "",
-      kidPreferences: ""
+      likes: "",
+      kidPreferences: "",
+      householdMembers: [],
+      familyModeActive: true,
+      notifications: {}
     }
   );
 
@@ -74,7 +101,7 @@ export default function SettingsProfile({
   }, [profile]);
 
   const getApiUsage = () => {
-    return parseInt(localStorage.getItem("pantry_chef_api_count") || "0");
+    return parseInt(localStorage.getItem("pantry_chef_api_count") || "0", 10);
   };
 
   const [apiUsage, setApiUsage] = useState(getApiUsage());
@@ -126,7 +153,6 @@ export default function SettingsProfile({
     const file = e.target.files[0];
     if (file) {
       try {
-        // Compress and resize avatar to 200px max width/height to protect Firestore doc size
         const resized = await resizeImage(file, 200);
         setProfileImage(resized);
         setLocalProfile({ ...localProfile, image: resized, avatar: resized });
@@ -137,16 +163,56 @@ export default function SettingsProfile({
     }
   };
 
-  const handleSyncIdChange = (e) => {
-    const newVal = e.target.value;
-    setDataSyncId(newVal);
-    localStorage.setItem("pantry_chef_custom_id", newVal);
+  // Roster Management Actions
+  const handleAddHouseholdMember = () => {
+    const newMember = { 
+      name: "", 
+      ageGroup: "Adult (18+)", 
+      healthGoals: [], 
+      restrictions: "", 
+      likes: "", 
+      dislikes: "" 
+    };
+    const currentMembers = localProfile.householdMembers || [];
+    const updatedMembers = [...currentMembers, newMember];
+    const updated = { ...localProfile, householdMembers: updatedMembers };
+    setLocalProfile(updated);
+    setExpandedRosterIndex(updatedMembers.length - 1);
   };
 
-  const triggerSystemNotification = (title, body) => {
-    window.dispatchEvent(
-      new CustomEvent("triggerSystemNotification", { detail: { title, body } })
-    );
+  const handleUpdateMemberField = (index, field, value) => {
+    const updatedMembers = [...(localProfile.householdMembers || [])];
+    updatedMembers[index] = { ...updatedMembers[index], [field]: value };
+    setLocalProfile({ ...localProfile, householdMembers: updatedMembers });
+  };
+
+  const handleToggleMemberGoal = (index, goal) => {
+    const updatedMembers = [...(localProfile.householdMembers || [])];
+    const currentGoals = updatedMembers[index].healthGoals || [];
+    const updatedGoals = currentGoals.includes(goal)
+      ? currentGoals.filter(g => g !== goal)
+      : [...currentGoals, goal];
+    updatedMembers[index] = { ...updatedMembers[index], healthGoals: updatedGoals };
+    setLocalProfile({ ...localProfile, householdMembers: updatedMembers });
+  };
+
+  const handleRemoveHouseholdMember = (index) => {
+    const currentMembers = localProfile.householdMembers || [];
+    const updatedMembers = currentMembers.filter((_, i) => i !== index);
+    setLocalProfile({ ...localProfile, householdMembers: updatedMembers });
+    setExpandedRosterIndex(null);
+  };
+
+  const handleToggleNotification = async (key, checked) => {
+    if (checked && typeof window !== "undefined" && "Notification" in window) {
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") {
+        alert("Browser notifications are blocked. Please enable them in your browser settings.");
+        return;
+      }
+    }
+    const updatedNotifs = { ...(localProfile.notifications || {}), [key]: checked };
+    setLocalProfile({ ...localProfile, notifications: updatedNotifs });
   };
 
   return (
@@ -198,6 +264,31 @@ export default function SettingsProfile({
         </div>
 
         <div className="space-y-4 pt-2 border-t border-gray-100">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">First Name</label>
+              <input
+                type="text"
+                placeholder="First name"
+                className="w-full p-3 bg-gray-50 rounded-2xl text-xs outline-none border border-gray-200 focus:border-indigo-600 focus:bg-white transition-all font-medium text-gray-800"
+                value={localProfile.firstName || ""}
+                onChange={(e) => setLocalProfile({ ...localProfile, firstName: e.target.value })}
+                disabled={!isDemoAuthenticated}
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Last Name</label>
+              <input
+                type="text"
+                placeholder="Last name"
+                className="w-full p-3 bg-gray-50 rounded-2xl text-xs outline-none border border-gray-200 focus:border-indigo-600 focus:bg-white transition-all font-medium text-gray-800"
+                value={localProfile.lastName || ""}
+                onChange={(e) => setLocalProfile({ ...localProfile, lastName: e.target.value })}
+                disabled={!isDemoAuthenticated}
+              />
+            </div>
+          </div>
+
           <div className="space-y-1">
             <label className="block text-[10px] font-bold text-gray-400 uppercase tracking-wider">Display Name</label>
             <input
@@ -226,7 +317,7 @@ export default function SettingsProfile({
             </label>
             <input
               type="text"
-              placeholder="e.g. 90210"
+              placeholder="e.g. 92543"
               className="w-full p-3 bg-gray-50 rounded-2xl text-xs outline-none border border-gray-200 focus:border-indigo-600 focus:bg-white transition-all font-medium text-gray-800"
               value={localProfile.zipCode || ""}
               onChange={(e) => setLocalProfile({ ...localProfile, zipCode: e.target.value })}
@@ -316,7 +407,7 @@ export default function SettingsProfile({
         </div>
       </div>
       
-      {/* Cooked Nutrition Analytics inside Settings */}
+      {/* 7. Cooked Nutrition Analytics */}
       <div className={`${!isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""}`}>
         <NutritionReportView
           nutritionLogs={nutritionLogs}
@@ -325,7 +416,7 @@ export default function SettingsProfile({
         />
       </div>
 
-      {/* Connected Retailer Accounts Card */}
+      {/* 8. Connected Retailer Accounts Card */}
       <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""}`}>
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
@@ -344,13 +435,13 @@ export default function SettingsProfile({
         </button>
       </div>
 
-      {/* 7. Cuisine Match Weighting Sliders */}
+      {/* 9. Cuisine Match Weighting Sliders */}
       <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""}`}>
         <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
           <ChefHat className="w-5 h-5 text-indigo-600" /> Cuisine Preferences (Match Weighting)
         </h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          {Object.keys(localProfile.cuisinePreferences || { American: 3, "Soul Food": 4, Mexican: 3, Italian: 3, Asian: 3, Indian: 3, Mediterranean: 3, Thai: 3, Caribbean: 3, French: 3, Chinese: 3, Greek: 3, German: 3, Filipino: 3, Japanese: 3 }).map((cuisine) => {
+          {Object.keys(localProfile.cuisinePreferences || DEFAULT_CUISINE_PREFERENCES).map((cuisine) => {
             const currentVal = (localProfile.cuisinePreferences || {})[cuisine] || 3;
             return (
               <div key={cuisine} className="space-y-1 bg-gray-50 p-3 rounded-2xl border border-gray-100">
@@ -372,66 +463,7 @@ export default function SettingsProfile({
         </div>
       </div>
 
-      {/* 8. Household & AI Taste Profile Engine */}
-      <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""}`}>
-        <h3 className="font-bold text-gray-900 flex items-center gap-2">
-          <Users className="w-5 h-5 text-indigo-600" /> Household & AI Taste Profile Engine
-        </h3>
-        <p className="text-xs text-gray-500 leading-relaxed">
-          Configure your household composition, health objectives, and flavor profiles to let the smart assistant tailor macro targets and dietary guardrails automatically.
-        </p>
-
-        {/* Health Goals Selection */}
-        <div className="space-y-1.5 pt-2 border-t border-gray-100">
-          <label className="block text-[10px] font-bold text-gray-500 uppercase">Health Goals & Medical Diets</label>
-          <div className="flex flex-wrap gap-1.5">
-            {["Weight Loss", "Mass-Building / High Protein", "Pregnancy / Postnatal", "Diabetes-Friendly", "Low Sodium", "Heart Healthy"].map((goal) => {
-              const isSelected = (localProfile.healthGoals || []).includes(goal);
-              return (
-                <button
-                  key={goal}
-                  type="button"
-                  onClick={() => {
-                    const current = localProfile.healthGoals || [];
-                    const updated = isSelected ? current.filter(g => g !== goal) : [...current, goal];
-                    setLocalProfile({ ...localProfile, healthGoals: updated });
-                  }}
-                  className={`px-3 py-1.5 rounded-full text-xs font-bold border transition-all cursor-pointer ${
-                    isSelected ? "bg-indigo-600 text-white border-indigo-600" : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
-                  }`}
-                >
-                  {goal}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Disliked Foods & Ingredients */}
-        <div className="space-y-1.5 pt-2">
-          <label className="block text-[10px] font-bold text-gray-500 uppercase">Disliked Foods & Aversions (Comma Separated)</label>
-          <input
-            type="text"
-            placeholder="e.g. cilantro, blue cheese, mushrooms, heavy spice"
-            value={localProfile.dislikedFoods || ""}
-            onChange={(e) => setLocalProfile({ ...localProfile, dislikedFoods: e.target.value })}
-            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500"
-          />
-        </div>
-
-        {/* Kid Preferences & Family Adaptations */}
-        <div className="space-y-1.5 pt-2">
-          <label className="block text-[10px] font-bold text-gray-500 uppercase">Household / Kid Preferences & Adaptations</label>
-          <textarea
-            value={localProfile.kidPreferences || ""}
-            onChange={(e) => setLocalProfile({ ...localProfile, kidPreferences: e.target.value })}
-            placeholder="Describe any picky eater accommodations, e.g. prefers mild seasoning, separate sauces..."
-            className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500 h-20 resize-none"
-          />
-        </div>
-      </div>
-
-      {/* 9. Equipment */}
+      {/* 10. Kitchen Equipment */}
       <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""}`}>
         <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
           <CookingPot className="w-5 h-5 text-indigo-600" /> Kitchen Equipment
@@ -450,7 +482,299 @@ export default function SettingsProfile({
         </div>
       </div>
 
-      {/* 12. Save Button */}
+      {/* 11. UNIFIED HOUSEHOLD & TASTE ENGINE */}
+      <div className={`bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""}`}>
+        <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-50 rounded-xl">
+              <Users className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900 text-sm">Household & Taste Engine</h3>
+              <p className="text-[10px] text-gray-400">Configure taste guardrails & family scaling.</p>
+            </div>
+          </div>
+          
+          <label className="flex items-center cursor-pointer bg-gray-50 border border-gray-200 rounded-full px-1 py-1">
+            <span className={`text-[10px] font-bold px-3 py-1 rounded-full transition-colors ${!(localProfile.familyModeActive ?? true) ? "bg-white shadow-sm text-indigo-700" : "text-gray-400"}`}>Solo</span>
+            <input
+              type="checkbox"
+              checked={localProfile.familyModeActive ?? true}
+              onChange={(e) => {
+                setLocalProfile({ ...localProfile, familyModeActive: e.target.checked });
+                setExpandedRosterIndex(null);
+              }}
+              className="hidden"
+            />
+            <span className={`text-[10px] font-bold px-3 py-1 rounded-full transition-colors ${(localProfile.familyModeActive ?? true) ? "bg-white shadow-sm text-indigo-700" : "text-gray-400"}`}>Family</span>
+          </label>
+        </div>
+
+        {!(localProfile.familyModeActive ?? true) ? (
+          <div className="space-y-4 animate-in fade-in">
+            <div>
+              <label className="text-xs font-bold text-gray-500 uppercase block mb-2">My Health Goals & Diets</label>
+              <div className="flex flex-wrap gap-1.5">
+                {["Weight Loss", "Mass-Building", "Diabetes-Friendly", "Low Sodium", "Heart Healthy", "Gluten-Free"].map((goal) => {
+                  const active = (localProfile.healthGoals || []).includes(goal);
+                  return (
+                    <button
+                      key={goal}
+                      type="button"
+                      onClick={() => {
+                        const current = localProfile.healthGoals || [];
+                        const updatedGoals = active ? current.filter(g => g !== goal) : [...current, goal];
+                        setLocalProfile({ ...localProfile, healthGoals: updatedGoals });
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-[10px] font-bold border transition-all cursor-pointer ${
+                        active ? "bg-indigo-600 text-white border-indigo-600 shadow-xs" : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+                      }`}
+                    >
+                      {goal}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Dislikes / Aversions</label>
+                <input
+                  value={localProfile.dislikedFoods || ""}
+                  onChange={(e) => setLocalProfile({ ...localProfile, dislikedFoods: e.target.value })}
+                  placeholder="e.g., cilantro, mushrooms"
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:bg-white focus:border-indigo-500 transition-colors"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-bold text-gray-400 uppercase block mb-1">Specific Likes</label>
+                <input
+                  value={localProfile.likes || ""}
+                  onChange={(e) => setLocalProfile({ ...localProfile, likes: e.target.value })}
+                  placeholder="e.g., extra garlic, sweet potato"
+                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none focus:bg-white focus:border-indigo-500 transition-colors"
+                />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-3 animate-in fade-in">
+            <div className="flex justify-between items-end mb-2">
+              <label className="text-[10px] font-bold text-gray-500 uppercase">Family Roster</label>
+              <button
+                type="button"
+                onClick={handleAddHouseholdMember}
+                className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 cursor-pointer flex items-center gap-1"
+              >
+                <Plus className="w-3 h-3" /> Add Member
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {localProfile.householdMembers?.map((member, idx) => (
+                <div key={idx} className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm transition-all">
+                  <div 
+                    className={`p-3 flex justify-between items-center cursor-pointer transition-colors ${expandedRosterIndex === idx ? "bg-indigo-50/50" : "hover:bg-gray-50"}`}
+                    onClick={() => setExpandedRosterIndex(expandedRosterIndex === idx ? null : idx)}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-black text-xs">
+                        {member.name ? member.name.charAt(0).toUpperCase() : "👤"}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-gray-900 text-sm">{member.name || "New Member"}</span>
+                          <span className="text-[9px] bg-gray-100 border border-gray-200 text-gray-600 px-2 py-0.5 rounded-md font-bold uppercase">
+                            {member.ageGroup}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-gray-400 mt-0.5 flex gap-2">
+                          {member.healthGoals?.length > 0 && <span>{member.healthGoals.length} Goals</span>}
+                          {member.restrictions && <span className="text-rose-500 font-bold flex items-center gap-0.5"><AlertCircle className="w-2.5 h-2.5"/> Allergies Listed</span>}
+                        </div>
+                      </div>
+                    </div>
+                    <ChevronRight className={`w-4 h-4 text-gray-400 transition-transform ${expandedRosterIndex === idx ? "rotate-90" : ""}`} />
+                  </div>
+
+                  {expandedRosterIndex === idx && (
+                    <div className="p-4 border-t border-gray-100 bg-gray-50/50 space-y-4 animate-in slide-in-from-top-2">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="text-[9px] font-bold text-gray-400 uppercase block mb-1">Name</label>
+                          <input
+                            value={member.name}
+                            onChange={(e) => handleUpdateMemberField(idx, "name", e.target.value)}
+                            placeholder="e.g., Person 1"
+                            className="w-full p-2.5 bg-white border border-gray-200 rounded-xl text-xs outline-none focus:border-indigo-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[9px] font-bold text-gray-400 uppercase block mb-1">Life Stage</label>
+                          <select
+                            value={member.ageGroup}
+                            onChange={(e) => handleUpdateMemberField(idx, "ageGroup", e.target.value)}
+                            className="w-full p-2.5 bg-white border border-gray-200 rounded-xl text-xs outline-none cursor-pointer"
+                          >
+                            <option value="Adult (18+)">Adult (18+)</option>
+                            <option value="Teen (13-17)">Teen (13-17)</option>
+                            <option value="Child (6-12)">Child (6-12)</option>
+                            <option value="Toddler (1-5)">Toddler (1-5)</option>
+                            <option value="Infant">Infant</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="text-[9px] font-bold text-gray-400 uppercase block mb-1.5">Specific Needs & Health Goals</label>
+                        <div className="flex flex-wrap gap-1.5">
+                          {["Mass-Building", "Pregnancy / Postnatal", "Weight Loss", "Picky Eater", "Low Sodium", "Diabetes-Friendly"].map((goal) => {
+                            const isActive = (member.healthGoals || []).includes(goal);
+                            return (
+                              <button
+                                key={goal}
+                                type="button"
+                                onClick={() => handleToggleMemberGoal(idx, goal)}
+                                className={`px-2.5 py-1 rounded-lg text-[9px] font-bold border transition-colors cursor-pointer ${
+                                  isActive ? "bg-indigo-100 text-indigo-700 border-indigo-200" : "bg-white text-gray-500 border-gray-200 hover:bg-gray-100"
+                                }`}
+                              >
+                                {goal}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <div>
+                          <label className="text-[9px] font-bold text-gray-400 uppercase block mb-1">Hard Allergies / Medical Restrictions</label>
+                          <input
+                            value={member.restrictions}
+                            onChange={(e) => handleUpdateMemberField(idx, "restrictions", e.target.value)}
+                            placeholder="e.g., Peanuts, Shellfish"
+                            className="w-full p-2.5 bg-white border border-rose-200 rounded-xl text-xs outline-none focus:border-rose-500 text-rose-900 placeholder-rose-300"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[9px] font-bold text-gray-400 uppercase block mb-1">Dislikes / Won't Eat</label>
+                            <input
+                              value={member.dislikes || ""}
+                              onChange={(e) => handleUpdateMemberField(idx, "dislikes", e.target.value)}
+                              placeholder="e.g., Onions, spice"
+                              className="w-full p-2 bg-white border border-gray-200 rounded-lg text-[10px] outline-none"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[9px] font-bold text-gray-400 uppercase block mb-1">Likes / Favorites</label>
+                            <input
+                              value={member.likes || ""}
+                              onChange={(e) => handleUpdateMemberField(idx, "likes", e.target.value)}
+                              placeholder="e.g., Sweet potato"
+                              className="w-full p-2 bg-white border border-gray-200 rounded-lg text-[10px] outline-none"
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="pt-2 flex justify-end">
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveHouseholdMember(idx)}
+                          className="text-[10px] font-bold text-red-500 hover:text-red-700 bg-red-50 px-3 py-1.5 rounded-lg cursor-pointer flex items-center gap-1"
+                        >
+                          <Trash2 className="w-3 h-3" /> Remove Member
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
+
+              {(!localProfile.householdMembers || localProfile.householdMembers.length === 0) && (
+                <div className="text-center py-6 bg-gray-50 border border-gray-200 border-dashed rounded-2xl">
+                  <p className="text-xs font-bold text-gray-500">Your roster is empty.</p>
+                  <p className="text-[10px] text-gray-400 mt-1">Add members to generate smart meal modifications.</p>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="pt-2 border-t border-gray-100 flex gap-2">
+          <button
+            type="button"
+            onClick={onExportMealPlanICS}
+            className="flex-1 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <Calendar className="w-4 h-4" /> Export Calendar (.ics)
+          </button>
+          <button
+            type="button"
+            onClick={() => alert("Alexa & Google Voice integration active: Say 'Alexa, add milk to Pantry Chef shopping list'")}
+            className="flex-1 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
+          >
+            <span>🎙️ Voice Sync Link</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 12. NOTIFICATION PREFERENCES */}
+      <div className={`bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-4 ${!isDemoAuthenticated ? "opacity-50 pointer-events-none" : ""}`}>
+        <div className="flex justify-between items-center border-b border-gray-100 pb-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-indigo-50 rounded-xl">
+              <Bell className="w-5 h-5 text-indigo-600" />
+            </div>
+            <div>
+              <h3 className="font-bold text-gray-900 text-sm">Notification Preferences</h3>
+              <p className="text-[10px] text-gray-400">Manage your real-time desktop & mobile alerts.</p>
+            </div>
+          </div>
+
+          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full ${
+            typeof window !== "undefined" && window.Notification && Notification.permission === "granted"
+              ? "bg-emerald-100 text-emerald-700"
+              : "bg-amber-100 text-amber-700"
+          }`}>
+            {typeof window !== "undefined" && window.Notification && Notification.permission === "granted" ? "🔔 Permissions Active" : "⚠️ Permissions Required"}
+          </span>
+        </div>
+
+        <div className="space-y-3">
+          {[
+            { key: "expiryAlerts", label: "🚨 Expiration Warnings", desc: "Notify me when pantry items are within 3 days of expiring." },
+            { key: "match100Alerts", label: "✨ 100% Recipe Match Alerts", desc: "Ping me when a saved recipe becomes fully cookable from stock." },
+            { key: "prepReminders", label: "⏰ Prep & Meal Reminders", desc: "Alert me when it's time to start scheduled dinner prep." },
+            { key: "workspaceUpdates", label: "🛒 Shared Workspace Updates", desc: "Notify me when family members claim or add grocery items." },
+          ].map((pref) => {
+            const isChecked = localProfile?.notifications?.[pref.key] ?? false;
+
+            return (
+              <div key={pref.key} className="flex items-center justify-between p-3 bg-gray-50 rounded-2xl border border-gray-100">
+                <div className="pr-4">
+                  <span className="text-xs font-bold text-gray-800 block">{pref.label}</span>
+                  <span className="text-[10px] text-gray-500 leading-snug">{pref.desc}</span>
+                </div>
+
+                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={(e) => handleToggleNotification(pref.key, e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600"></div>
+                </label>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 13. Save Button */}
       {isDemoAuthenticated && (
         <button
           onClick={() => onSaveProfile(localProfile)}
@@ -460,7 +784,7 @@ export default function SettingsProfile({
         </button>
       )}
 
-      {/* 11. Platform Governance */}
+      {/* 14. Platform Governance */}
       <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm text-center space-y-2">
         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">Platform Governance</p>
         <div className="flex justify-center gap-4 text-xs font-bold text-indigo-600">
@@ -473,8 +797,6 @@ export default function SettingsProfile({
           </button>
         </div>
       </div>
-
-      
     </div>
   );
 }

@@ -242,7 +242,12 @@ const AdminDashboard = ({
   isAdmin,
   db,
   appId,
-  DEMO_USERS
+  DEMO_USERS,
+  onApproveUser,
+  onRestartTour,
+  notificationHistory = [],
+  onClearHistory,
+  onInspectRecipe,
 }) => {
   const [adminView, setAdminView] = useState("impact");
   const [feedbackLogs, setFeedbackLogs] = useState([]);
@@ -445,8 +450,12 @@ const AdminDashboard = ({
           </div>
           <button
             onClick={() => {
-              localStorage.removeItem("pantry_chef_onboarded");
-              window.location.reload();
+              if (onRestartTour) {
+                onRestartTour();
+              } else {
+                localStorage.removeItem("pantry_chef_onboarded");
+                setShowOnboarding(true);
+              }
             }}
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer transition-colors"
           >
@@ -782,6 +791,14 @@ const AdminDashboard = ({
 
                   <div className="flex gap-2 pt-2 border-t border-white/10">
                     <button
+                      type="button"
+                      onClick={() => onInspectRecipe && onInspectRecipe(report)}
+                      className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-lg transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
+                      title="Jump to full recipe view to edit, delete, or nuke"
+                    >
+                      🔍 Inspect Recipe ↗
+                    </button>
+                    <button
                       onClick={async () => {
                         if (report.recipeId && report.recipeId !== "unknown") {
                           await deleteDoc(doc(db, `/artifacts/${appId}/public/data/userRecipes`, report.recipeId));
@@ -827,12 +844,11 @@ const AdminDashboard = ({
 
                   {candidate.status === "pending" && (
                     <button
-                      onClick={async () => {
-                        await updateDoc(doc(db, `/artifacts/${appId}/public/data/waitlist`, candidate.id), {
-                          status: "approved",
-                          approvedAt: serverTimestamp()
-                        });
-                        alert(`Approved ${candidate.email}!`);
+                      onClick={() => {
+                        // Trigger Firestore status update and EmailJS welcome email
+                        if (onApproveUser) {
+                          onApproveUser(candidate.uid || candidate.id, candidate.email, candidate.displayName);
+                        }
                       }}
                       className="px-3 py-2 bg-green-600 hover:bg-green-700 text-white rounded-xl text-xs font-bold shadow-md cursor-pointer transition-colors"
                     >
@@ -923,6 +939,66 @@ const AdminDashboard = ({
           </div>
         </div>
       </div>
+
+      {/* AUDIT LOG WITH IDENTITY & ERROR REVIEW */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-5 shadow-sm space-y-3">
+        <div className="flex justify-between items-center border-b border-gray-100 pb-2">
+          <h3 className="font-black text-xs text-gray-800 uppercase tracking-wider flex items-center gap-2">
+            🔔 System Message & Diagnostic Log ({notificationHistory.length})
+          </h3>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                window.dispatchEvent(
+                  new CustomEvent("triggerDiagnosticTest", {
+                    detail: `🧪 Diagnostic Test fired by ${userData?.name || "Admin"} at ${new Date().toLocaleTimeString()}`,
+                  })
+                );
+              }}
+              className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-lg transition-colors cursor-pointer"
+            >
+              + Trigger Test Alert
+            </button>
+            <button
+              onClick={() => onClearHistory && onClearHistory()}
+              className="text-[10px] text-gray-400 hover:text-red-600 font-bold cursor-pointer"
+            >
+              Clear Log
+            </button>
+          </div>
+        </div>
+
+        <div className="max-h-72 overflow-y-auto space-y-2 pr-1 font-mono text-[11px]">
+          {notificationHistory.length > 0 ? (
+            notificationHistory.map((item) => (
+              <div
+                key={item.id}
+                className={`p-3 rounded-xl border flex flex-col gap-1.5 ${
+                  item.level === "error"
+                    ? "bg-red-50/70 border-red-200 text-red-950"
+                    : item.level === "warning"
+                    ? "bg-amber-50/70 border-amber-200 text-amber-950"
+                    : "bg-gray-50 border-gray-200 text-gray-900"
+                }`}
+              >
+                <div className="flex justify-between items-start gap-2">
+                  <span className="font-bold font-sans text-xs flex-1">{item.message}</span>
+                  <span className="text-[10px] text-gray-400 shrink-0">{item.timestamp}</span>
+                </div>
+                <div className="flex flex-wrap items-center gap-3 text-[10px] text-gray-500 font-sans border-t border-black/5 pt-1">
+                  <span>👤 User: <strong>{item.userEmail}</strong></span>
+                  <span>🏠 Kitchen: <strong>{item.workspace}</strong></span>
+                  <span>📍 Tab: <strong>{item.activeTab}</strong></span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-gray-400 text-center py-6 font-sans text-xs">No alerts or errors recorded this session.</p>
+          )}
+        </div>
+      </div>
+
     </div>
   );
 };
